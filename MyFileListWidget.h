@@ -11,24 +11,27 @@ public:
 		viewMode = vm;
 	}
 	void addItem(MyFileListItem* item, std::string id);
-	void setConfigFileName(std::string configFileName){
-		configText = configFileName;
+	void setConfigFileName(std::string File_Name){
+		configFileName = File_Name;
 	}
 private:
 	typedef long long llong;
 	std::string configText;
-	std::string configFileName;
-	std::unordered_map<std::string,std::string> configMap;
+	std::string configFileName = "config.ini";
+	std::unordered_map<std::string,std::string> configMap;//图标名字与id的绑定
 	llong horizontalSpacing;
 	llong verticalSpacing;
 	llong latticeWidth, latticeHeight,latticeVerticalNum,latticeHorizontalNum;
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
-	std::map<std::string, MyFileListItem*> itemsMap;
-	std::map<std::string, llong> Xindex;
-	std::map<std::string, llong> Yindex;
-	std::map<llong/*Xindex*/, llong> XCoords;
-	std::map<llong/*Yindex*/, llong> YCoords;//索引与坐标的对应关系
+	std::map<std::string, MyFileListItem*> itemsMap;//id与物体的绑定
+	std::map<std::string, llong> Xindex;//id与X索引
+	std::map<std::string, llong> Yindex;//id与Y索引
+	std::map<llong/*Xindex*/, llong> XCoords;//索引与x坐标的对应关系
+	std::map<llong/*Yindex*/, llong> YCoords;//索引与y坐标的对应关系
 protected:
 	void paintEvent(QPaintEvent* e);
 };
-
+/*
+配置文件格式
+桌面图标名字 id Xindex Yindex
+*/

@@ -87,7 +87,7 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     re = sc->availableGeometry();
     MyFileListWidget* pLWidget = new MyFileListWidget(this);
     pLWidget->setViewMode(MyFileListItem::ViewMode::Icon);
-    pLWidget->setConfigString()
+    pLWidget->setConfigFileName("config.ini");
     for (intptr_t i = 0; i < fileNum; i++)
     {
         MyFileListItem* pLWItem = new MyFileListItem();

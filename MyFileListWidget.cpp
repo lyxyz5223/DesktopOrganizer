@@ -6,12 +6,13 @@
 #include <vector>
 //#include <array>
 #include "stringProcess.h"
+#include <cstdlib>
+
 MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 {
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	using namespace std;
-	string configFileName = "config.ini";
 	fstream fConfig(configFileName, ios::out);
 	if (fConfig.is_open())
 	{
@@ -20,21 +21,12 @@ MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 		fConfig.open(configFileName, ios::in);
 		if (fConfig.is_open())
 		{
-			llong linesNum = 0;
 			string strConfig,strTmp;
-			while (fConfig >> strTmp)
-			{
-				linesNum++;
-			}
-			
-			//在C++中使用ifstream进行文本文件读取时，
-			// 如果已经读取完一次，
-			// 此时读指针位于文件末尾，
-			// 我们无法直接通过调用seekg(0, ios::beg)回到文件开头，
-			// 而是需要先调用clear()清除指针状态，
-			// 再调用seekg(0, ios::beg)才能成功返回文件头
-			fConfig.clear();
-			fConfig.seekg(0, ios::beg);
+			//llong linesNum = 0;
+			//while (fConfig >> strTmp)
+			//	linesNum++;
+			//fConfig.clear();
+			//fConfig.seekg(0, ios::beg);
 			vector<string> ConfigVector;
 			while (fConfig >> strTmp)
 			{
@@ -44,24 +36,27 @@ MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 			strConfig.erase(strConfig.end()-1);
 			extern std::string UTF8ToANSI(std::string utf8Text);
 			cout << UTF8ToANSI("配置文件内容：\n") << UTF8ToANSI(strConfig) << std::endl;
-			//写split的测试代码
-			//std::vector<std::string> aOK;
-			//string toDo="123456 789,4444 \\ 55 \\\\ 11111 ";
-			//vector<string> deli;
-			//deli.push_back(" ");
-			//deli.push_back(",");
-			//aOK = split(toDo,deli);
-			//for (int i = 0; i < aOK.size(); i++)
-			//	cout << UTF8ToANSI(aOK[i]+";");
 			for (string configContent : ConfigVector)
 			{
 				vector<string> configContentVector = split(configContent);
 				configMap[configContentVector.at(0)] = configContentVector.at(1);
+				Xindex[configContentVector.at(0)] = std::atoll(configContentVector.at(2).c_str());
+				Yindex[configContentVector.at(0)] = std::atoll(configContentVector.at(3).c_str());
+
 			}
 		}
 	}
 	
 }
+//写split的测试代码
+//std::vector<std::string> aOK;
+//string toDo="123456 789,4444 \\ 55 \\\\ 11111 ";
+//vector<string> deli;
+//deli.push_back(" ");
+//deli.push_back(",");
+//aOK = split(toDo,deli);
+//for (int i = 0; i < aOK.size(); i++)
+//	cout << UTF8ToANSI(aOK[i]+";");
 
 void MyFileListWidget::addItem(MyFileListItem* item, std::string id)
 {
