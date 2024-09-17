@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/DesktopOrganizer">
+        <file>DesktopOrganizer.ico</file>
+    </qresource>
+</RCC>
