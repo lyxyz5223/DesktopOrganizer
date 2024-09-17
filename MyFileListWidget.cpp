@@ -13,10 +13,10 @@ MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	using namespace std;
-	fstream fConfig(configFileName, ios::out);
+	fstream fConfig(configFileName, ios::app|ios::out);
 	if (fConfig.is_open())
 	{
-		fConfig << "我叼你妈\n操你妈的，我真的服了\n你tm孙子一个" << std::endl;
+		//fConfig << "1.txt 1 1 1" << std::endl;//Test Write
 		fConfig.close();
 		fConfig.open(configFileName, ios::in);
 		if (fConfig.is_open())
@@ -27,23 +27,30 @@ MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 			//	linesNum++;
 			//fConfig.clear();
 			//fConfig.seekg(0, ios::beg);
-			vector<string> ConfigVector;
-			while (fConfig >> strTmp)
+			if (fConfig.peek() == ifstream::traits_type::eof())//判断文件是否为空
+				goto fileNULL;
+			while (getline(fConfig, strTmp))
 			{
 				strConfig += strTmp + "\n";
-				ConfigVector.push_back(strTmp);
-			}
-			strConfig.erase(strConfig.end()-1);
-			extern std::string UTF8ToANSI(std::string utf8Text);
-			cout << UTF8ToANSI("配置文件内容：\n") << UTF8ToANSI(strConfig) << std::endl;
-			for (string configContent : ConfigVector)
-			{
-				vector<string> configContentVector = split(configContent);
+				vector<string> configContentVector = split(strTmp);
+				if (configContentVector.size() < 4)
+				{
+					assert(false && "configContentVector.size()<4");
+					exit(999);
+				}
 				configMap[configContentVector.at(0)] = configContentVector.at(1);
 				Xindex[configContentVector.at(0)] = std::atoll(configContentVector.at(2).c_str());
 				Yindex[configContentVector.at(0)] = std::atoll(configContentVector.at(3).c_str());
 
 			}
+			strConfig.erase(strConfig.end()-1);
+			fileNULL:
+			extern std::string UTF8ToANSI(std::string utf8Text);
+			cout << UTF8ToANSI("配置文件内容：\n") << UTF8ToANSI(strConfig) << std::endl;
+			//for (string configContent : ConfigVector)
+			//{
+
+			//}
 		}
 	}
 	

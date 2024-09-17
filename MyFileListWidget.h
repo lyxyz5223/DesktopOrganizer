@@ -19,12 +19,12 @@ private:
 	std::string configText;
 	std::string configFileName = "config.ini";
 	std::unordered_map<std::string,std::string> configMap;//图标名字与id的绑定
-	llong horizontalSpacing;//桌面图标水平间距
-	llong verticalSpacing;//桌面图标垂直间距
-	llong latticeWidth, //桌面图标宽度
-		latticeHeight,//桌面图标高度
-		latticeVerticalNum,//桌面图标垂直数量
-		latticeHorizontalNum;//桌面图标水平数量
+	llong horizontalSpacing = 10;//桌面图标水平间距
+	llong verticalSpacing = 10;//桌面图标垂直间距
+	llong latticeWidth = 64, //桌面图标宽度
+		latticeHeight = 80,//桌面图标高度
+		latticeVerticalNum = 0,//桌面图标垂直数量
+		latticeHorizontalNum = 0;//桌面图标水平数量
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
 	std::map<std::string, MyFileListItem*> itemsMap;//id与物体的绑定
 	std::map<std::string, llong> Xindex;//id与X索引
