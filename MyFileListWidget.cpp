@@ -75,11 +75,11 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 		初始的x坐标 = 0;//可以改
 	llong yNext = 初始的y坐标,
 		xNext = 初始的x坐标,
-		rowCount=1;
+		rowCount = 1;
 	std::map<llong, llong>::iterator iter;
 	for (iter = YCoords.begin(); iter != YCoords.end(); iter++)
 	{
-
+		
 	}
 	QWidget::paintEvent(e);
 }
