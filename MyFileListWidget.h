@@ -12,7 +12,7 @@ public:
 	}
 	void addItem(MyFileListItem* item, std::string id);
 	void setConfigFileName(std::string configFileName){
-		configText = configString;
+		configText = configFileName;
 	}
 private:
 	typedef long long llong;
