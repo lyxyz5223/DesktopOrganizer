@@ -8,7 +8,7 @@
 #include "stringProcess.h"
 #include <cstdlib>
 
-MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
+MyFileListWidget::MyFileListWidget(QWidget* parent) : QWidget(parent)
 {
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
@@ -21,7 +21,7 @@ MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 		fConfig.open(configFileName, ios::in);
 		if (fConfig.is_open())
 		{
-			string strConfig,strTmp;
+			string strTmp;
 			//llong linesNum = 0;
 			//while (fConfig >> strTmp)
 			//	linesNum++;
@@ -47,10 +47,6 @@ MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 			fileNULL:
 			extern std::string UTF8ToANSI(std::string utf8Text);
 			cout << UTF8ToANSI("配置文件内容：\n") << UTF8ToANSI(strConfig) << std::endl;
-			//for (string configContent : ConfigVector)
-			//{
-
-			//}
 		}
 	}
 	
@@ -67,26 +63,56 @@ MyFileListWidget::MyFileListWidget(QWidget* parent)// : QWidget(parent)
 
 void MyFileListWidget::addItem(MyFileListItem* item, std::string id)
 {
+	item->setParent(this);
 	itemsMap[id] = item;
+	item->setViewMode(viewMode);
 }
 
 void MyFileListWidget::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
-	p.fillRect(rect(), QColor(255, 255, 255, 100));
-	if (latticeHeight + verticalSpacing != 0)
-		latticeVerticalNum = (height() + verticalSpacing) / (latticeHeight + verticalSpacing);
-	if (latticeHeight + horizontalSpacing != 0)
-		latticeHorizontalNum = (height() + horizontalSpacing) / (latticeHeight + horizontalSpacing);
+	p.fillRect(rect(), QColor(255, 255, 255, 255));
 	llong 初始的y坐标 = 0,
 		初始的x坐标 = 0;//可以改
 	llong yNext = 初始的y坐标,
 		xNext = 初始的x坐标,
-		rowCount = 1;
-	std::map<llong, llong>::iterator iter;
-	for (iter = YCoords.begin(); iter != YCoords.end(); iter++)
+		rowCount = 1,
+		lineCount = 1;
+	if (latticeHeight + verticalSpacing != 0)
+		latticeVerticalNum = (height() + verticalSpacing) / (latticeHeight + verticalSpacing);
+	if (latticeHeight + horizontalSpacing != 0)
+		latticeHorizontalNum = (height() + horizontalSpacing) / (latticeHeight + horizontalSpacing);
+	latticeHorizontalNum = (latticeHorizontalNum > itemsMap.size() / latticeVerticalNum ? latticeHorizontalNum : itemsMap.size() / latticeVerticalNum);
+	for (llong i = 1; i <= latticeVerticalNum; i++,yNext += latticeHeight+verticalSpacing)
+		YCoords[i] = yNext;
+	for (llong i = 1; i <= latticeHorizontalNum; i++, xNext += latticeWidth+horizontalSpacing)
+		XCoords[i] = xNext;
+	if (strConfig == "")
 	{
-		
+		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+		{
+			Xindex[iter->first] = rowCount;
+			Yindex[iter->first] = lineCount;
+			lineCount++;
+			if (lineCount > latticeVerticalNum)
+			{
+				lineCount = 1;
+				rowCount++;
+			}
+			int aaa = iter->second->width();
+			if (iter->second->width() > latticeWidth)
+				latticeWidth = iter->second->width();
+			if (iter->second->height() > latticeHeight)
+				latticeHeight = iter->second->height();
+		}
+		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+		{
+			llong ind = Yindex[iter->first];
+			ind = YCoords[ind];
+			iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
+			//iter->second->resize(latticeWidth,latticeHeight);
+			//iter->second->show();
+		}
 	}
 	QWidget::paintEvent(e);
 }

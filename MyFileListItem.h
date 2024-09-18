@@ -20,6 +20,7 @@ public:
 	void setMyIconSize(double ICONSIZE) {
 		MyIconSize = ICONSIZE;
 	}
+	void adjustSize();
 
 signals:
 	void doubleClicked();

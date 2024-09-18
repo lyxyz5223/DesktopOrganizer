@@ -16,19 +16,19 @@ public:
 	}
 private:
 	typedef long long llong;
-	std::string configText;
+	std::string strConfig = "";
 	std::string configFileName = "config.ini";
 	std::unordered_map<std::string,std::string> configMap;//图标名字与id的绑定
 	llong horizontalSpacing = 10;//桌面图标水平间距
 	llong verticalSpacing = 10;//桌面图标垂直间距
-	llong latticeWidth = 64, //桌面图标宽度
-		latticeHeight = 80,//桌面图标高度
+	llong latticeWidth = 0, //桌面图标宽度
+		latticeHeight = 0,//桌面图标高度
 		latticeVerticalNum = 0,//桌面图标垂直数量
 		latticeHorizontalNum = 0;//桌面图标水平数量
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
 	std::map<std::string, MyFileListItem*> itemsMap;//id与物体的绑定
 	std::map<std::string, llong> Xindex;//id与X索引
-	std::map<std::string, llong> Yindex;//id与Y索引
+	std::map<std::string, llong> Yindex;//id与Y索引Yindex[id] = index
 	std::map<llong/*Xindex*/, llong> XCoords;//索引与x坐标的对应关系
 	std::map<llong/*Yindex*/, llong> YCoords;//索引与y坐标的对应关系
 protected:

@@ -9,6 +9,7 @@ MyFileListItem::MyFileListItem(QWidget* parent) : QPushButton(parent)
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setWindowFlags(Qt::FramelessWindowHint);
 	//itemTextSize.setHeight(25);
+	resize(0, 0);
 }
 
 void MyFileListItem::paintEvent(QPaintEvent* e)
@@ -67,6 +68,19 @@ void MyFileListItem::mouseDoubleClickEvent(QMouseEvent* e)
 void MyFileListItem::setViewMode(ViewMode View_Mode)
 {
 	viewMode = View_Mode;
+	if (size().isNull())
+	{
+		adjustSize();
+	}
+}
+void MyFileListItem::adjustSize() {
+	QString Qtext = text();
+	QFontMetrics fontMetrics1(font());
+	Qtext = elidedMultiLinesText(this, Qtext, 2, Qt::ElideRight);
+	int fontHeight = fontMetrics1.size(0, Qtext).height();
+	itemTextSize.setHeight(fontHeight);
+	if (viewMode == ViewMode::Icon)
+		resize(MyIconSize, itemTextSize.height() + MyIconSize);
 }
 
 QString elidedMultiLinesText(QWidget* widget,QString text, int lines, Qt::TextElideMode ElideMode)
