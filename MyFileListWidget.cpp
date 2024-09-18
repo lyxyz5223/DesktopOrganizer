@@ -71,7 +71,7 @@ void MyFileListWidget::addItem(MyFileListItem* item, std::string id)
 void MyFileListWidget::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
-	p.fillRect(rect(), QColor(255, 255, 255, 255));
+	p.fillRect(rect(), QColor(255, 255, 255, 0));
 	llong 初始的y坐标 = 0,
 		初始的x坐标 = 0;//可以改
 	llong yNext = 初始的y坐标,
@@ -99,7 +99,7 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 				lineCount = 1;
 				rowCount++;
 			}
-			int aaa = iter->second->width();
+			//int aaa = iter->second->width();
 			if (iter->second->width() > latticeWidth)
 				latticeWidth = iter->second->width();
 			if (iter->second->height() > latticeHeight)
@@ -107,8 +107,8 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 		}
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		{
-			llong ind = Yindex[iter->first];
-			ind = YCoords[ind];
+			//llong ind = Yindex[iter->first];
+			//ind = YCoords[ind];
 			iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
 			//iter->second->resize(latticeWidth,latticeHeight);
 			//iter->second->show();
