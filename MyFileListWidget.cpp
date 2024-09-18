@@ -49,6 +49,7 @@ MyFileListWidget::MyFileListWidget(QWidget* parent) : QWidget(parent)
 			cout << UTF8ToANSI("配置文件内容：\n") << UTF8ToANSI(strConfig) << std::endl;
 		}
 	}
+	fConfig.close();
 	
 }
 //写split的测试代码
@@ -87,33 +88,47 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 		YCoords[i] = yNext;
 	for (llong i = 1; i <= latticeHorizontalNum; i++, xNext += latticeWidth+horizontalSpacing)
 		XCoords[i] = xNext;
+	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+	{
+		Xindex[iter->first] = rowCount;
+		Yindex[iter->first] = lineCount;
+		lineCount++;
+		if (lineCount > latticeVerticalNum)
+		{
+			lineCount = 1;
+			rowCount++;
+		}
+		if (iter->second->width() > latticeWidth)
+			latticeWidth = iter->second->width();
+		if (iter->second->height() > latticeHeight)
+			latticeHeight = iter->second->height();
+	}
 	if (strConfig == "")
 	{
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		{
-			Xindex[iter->first] = rowCount;
-			Yindex[iter->first] = lineCount;
-			lineCount++;
-			if (lineCount > latticeVerticalNum)
-			{
-				lineCount = 1;
-				rowCount++;
-			}
-			//int aaa = iter->second->width();
-			if (iter->second->width() > latticeWidth)
-				latticeWidth = iter->second->width();
-			if (iter->second->height() > latticeHeight)
-				latticeHeight = iter->second->height();
-		}
-		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
-		{
-			//llong ind = Yindex[iter->first];
-			//ind = YCoords[ind];
+			configMap[iter->second->text().toStdString()] = iter->first;
 			iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
 			//iter->second->resize(latticeWidth,latticeHeight);
 			//iter->second->show();
 		}
 	}
+	else {
+		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+		{
+			if (Xindex.count(iter->first) > 0)
+				iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
+			else
+			{
+				configMap[iter->second->text().toStdString()] = iter->first;
+				//找到空出来的位置
+				Xindex[];
+				Yindex[];
+				iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
+			}
+		}
+	}
+	writeConfig(configMap);
 	QWidget::paintEvent(e);
 }
 /*
@@ -132,3 +147,15 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 	}
 */
 
+bool MyFileListWidget::writeConfig(std::unordered_map<std::string, std::string> config_map)
+{
+	using namespace std;
+	fstream fConfig(configFileName,ios::out);
+	if (!fConfig.is_open())
+		return false;
+	for (auto iter = configMap.begin(); iter != configMap.end(); iter++)
+		fConfig << iter->first << " " << iter->second << " " << Xindex[iter->first] << " " << Yindex[iter->first]<<endl;
+	fConfig.flush();
+	fConfig.close();
+	return true;
+}
