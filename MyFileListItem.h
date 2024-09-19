@@ -11,8 +11,6 @@ public:
 	};
 	~MyFileListItem() {}
 	MyFileListItem(QWidget* parent = nullptr);
-	void paintEvent(QPaintEvent* e);
-	void mouseDoubleClickEvent(QMouseEvent* e);
 	void setViewMode(ViewMode View_Mode);
 	void setImage(QImage image) {
 		itemImage = image;
@@ -22,10 +20,17 @@ public:
 	}
 	void adjustSize();
 
+protected:
+	void mousePressEvent(QMouseEvent* e);
+	void paintEvent(QPaintEvent* e);
+	void mouseDoubleClickEvent(QMouseEvent* e);
+
 signals:
 	void doubleClicked();
 
 public slots:
+	void MenuClickedProc(QAction* action);
+	void desktopItemProc(std::wstring name);
 private:
 	ViewMode viewMode = ViewMode::List;
 	double MyIconSize = 50;

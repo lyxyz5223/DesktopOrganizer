@@ -1,6 +1,16 @@
+//Qt
 #include "MyFileListItem.h"
 #include <QPainter>
 #include <QFontMetrics>
+#include <QMenu>
+#include <qevent.h>
+
+//C++
+#include <iostream>
+#include "stringProcess.h"
+
+//Windows
+#include <Windows.h>
 
 QString elidedMultiLinesText(QWidget* widget, QString text, int lines, Qt::TextElideMode ElideMode);
 
@@ -58,7 +68,6 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 	QWidget::paintEvent(e);
 	//QPushButton::paintEvent(e);
 }
-#include <Windows.h>
 void MyFileListItem::mouseDoubleClickEvent(QMouseEvent* e)
 {
 	//MessageBox(0, L"DoubleClicked!!!", L"", 0);
@@ -128,4 +137,40 @@ QString elidedMultiLinesText(QWidget* widget,QString text, int lines, Qt::TextEl
 		}
 		return strList.join("\n");
 	}
+}
+
+void MyFileListItem::mousePressEvent(QMouseEvent* e)
+{
+	switch (e->button())
+	{
+	case Qt::MouseButton::RightButton:
+	{
+		QMenu* menu1 = new QMenu(this);
+		menu1->addAction(QIcon(), "打开");
+		menu1->addSeparator();
+		menu1->addAction(QIcon(), "打开方式");
+		menu1->addAction(QIcon(), "刷新");
+		connect(menu1, SIGNAL(triggered(QAction*)), this, SLOT(MenuClickedProc(QAction*)));
+		menu1->exec(QCursor::pos());
+		break;
+	}
+	default:
+		break;
+
+	}
+}
+void MyFileListItem::MenuClickedProc(QAction* action)
+{
+	if (action->text() == "打开")
+	{
+		emit doubleClicked();
+	}
+}
+void MyFileListItem::desktopItemProc(std::wstring name)
+{
+	extern std::wstring desktopPath;
+	if (desktopPath.back() != L'\\')
+		desktopPath += L"\\";
+	std::cout << UTF8ToANSI(wstr2str_2UTF8(name)).c_str() << std::endl;
+	ShellExecute((HWND)this->parentWidget()->parentWidget()->winId(), L"open", name.c_str(), L"", desktopPath.c_str(), SW_NORMAL);
 }

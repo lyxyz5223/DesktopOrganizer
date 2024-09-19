@@ -1,5 +1,10 @@
+//Qt
 #include "MyFileListWidget.h"
 #include <QPainter>
+#include <qevent.h>
+#include <QMenu>
+
+//C++
 #include <fstream>
 //#include <sstream>
 #include <iostream>
@@ -15,7 +20,7 @@
 #pragma comment(lib,"Shlwapi.lib")
 //My Windows
 #include "fileProc.h"
-std::wstring desktopPath;//需要整理并且放于桌面的路径
+std::wstring desktopPath = L"";//需要整理并且放于桌面的路径
 
 MyFileListWidget::MyFileListWidget(QWidget* parent,QString path) : QWidget(parent)
 {
@@ -25,7 +30,8 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path) : QWidget(paren
 	WCHAR cFilePath[MAX_PATH];
 	SHGetFolderPath(NULL, CSIDL_DESKTOP, 0, 0, cFilePath);
 	//MessageBox(HWND_thisApp, cFilePath, L"", 0);
-	desktopPath = cFilePath;
+	if(desktopPath == L"")
+		desktopPath = cFilePath;
 	//desktopPath += L"\\MyDesktop\\";
 	//判断文件夹是否存在，不存在自动创建
 	if (PathFileExists(desktopPath.c_str()) == TRUE)
@@ -127,6 +133,25 @@ void MyFileListWidget::addItem(MyFileListItem* item, std::string id)
 	itemsMap[id].filename = item->text().toStdString();
 	itemsMap[id].id = std::atoll(id.c_str());
 	item->setViewMode(viewMode);
+}
+
+void MyFileListWidget::mousePressEvent(QMouseEvent* e)
+{
+	switch (e->button())
+	{
+	case Qt::MouseButton::RightButton:
+	{
+		QMenu* menu1 = new QMenu(this);
+		menu1->addAction(QIcon(), "你好");
+		menu1->addAction(QIcon(), "傻逼");
+		menu1->addAction(QIcon(), "刷新");
+		menu1->exec(QCursor::pos());
+		break;
+	}
+	default: 
+		break;
+
+	}
 }
 
 void MyFileListWidget::paintEvent(QPaintEvent* e)

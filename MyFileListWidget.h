@@ -52,7 +52,7 @@ private:
 	//std::map<llong/*Yindex*/, llong> YCoords;//索引与y坐标的对应关系
 	bool writeConfig(std::map<std::string/*id*/, ItemProp> config_map, std::string 分隔符 = "\t");
 protected:
-
+	void mousePressEvent(QMouseEvent* e);
 	void paintEvent(QPaintEvent* e);
 };
 /*
