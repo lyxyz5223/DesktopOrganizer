@@ -8,11 +8,61 @@
 #include "stringProcess.h"
 #include <cstdlib>
 
-MyFileListWidget::MyFileListWidget(QWidget* parent) : QWidget(parent)
+//Windows
+#include <Windows.h>
+#include <ShlObj.h>
+#include <Shlwapi.h>
+#pragma comment(lib,"Shlwapi.lib")
+//My Windows
+#include "fileProc.h"
+std::wstring desktopPath;//需要整理并且放于桌面的路径
+
+MyFileListWidget::MyFileListWidget(QWidget* parent,QString path) : QWidget(parent)
 {
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	using namespace std;
+	WCHAR cFilePath[MAX_PATH];
+	SHGetFolderPath(NULL, CSIDL_DESKTOP, 0, 0, cFilePath);
+	//MessageBox(HWND_thisApp, cFilePath, L"", 0);
+	desktopPath = cFilePath;
+	//desktopPath += L"\\MyDesktop\\";
+	//判断文件夹是否存在，不存在自动创建
+	if (PathFileExists(desktopPath.c_str()) == TRUE)
+	{
+		//exist
+	}
+	else
+		//do not exist
+		if (CreateDirectory(desktopPath.c_str(), 0) == FALSE)
+		{
+			MessageBox(0, L"文件夹不存在且创建失败，请检查你是否有权限，或者尝试以管理员身份运行。程序将退出。", 0, MB_ICONERROR);
+			exit(2);
+		}
+	if (desktopPath.back() != L'\\')
+		desktopPath += L"\\";
+	std::wstring** filesList;
+	intptr_t fileNum = GetFileNum(desktopPath, true);
+	GetFilesArray(desktopPath, filesList);
+	for (intptr_t i = 0; i < fileNum; i++)
+	{
+		MyFileListItem* pLWItem = new MyFileListItem();
+
+		// Get the icon image associated with the item
+		SHFILEINFO sfi;
+		DWORD_PTR dw_ptr = SHGetFileInfo((desktopPath + filesList[i][0]).c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
+		QIcon desktopItemIcon;
+		if (dw_ptr)
+			desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
+		//pLWItem->setIcon(QIcon(desktopItemIcon));
+		pLWItem->setText(wstr2str_2UTF8(filesList[i][0]).c_str());
+		pLWItem->adjustSize();
+		pLWItem->setMyIconSize(64);
+		pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
+		this->addItem(pLWItem, std::to_string(i + 1));
+		connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(filesList[i][0]); });
+	}
+
 	fstream fConfig(configFileName, ios::app|ios::out);
 	if (fConfig.is_open())
 	{
@@ -32,16 +82,23 @@ MyFileListWidget::MyFileListWidget(QWidget* parent) : QWidget(parent)
 			while (getline(fConfig, strTmp))
 			{
 				strConfig += strTmp + "\n";
-				vector<string> configContentVector = split(strTmp);
+				vector<string> configContentVector = split(strTmp,"\t");
 				if (configContentVector.size() < 4)
 				{
 					assert(false && "configContentVector.size()<4");
 					exit(999);
 				}
-				configMap[configContentVector.at(0)] = configContentVector.at(1);
-				Xindex[configContentVector.at(0)] = std::atoll(configContentVector.at(2).c_str());
-				Yindex[configContentVector.at(0)] = std::atoll(configContentVector.at(3).c_str());
-
+				//itemsMap[configContentVector.at(1)].filename = configContentVector.at(0);
+				//itemsMap[configContentVector.at(1)].id = std::atoll(configContentVector.at(1).c_str());
+				itemsMap[configContentVector.at(1)] = {
+					itemsMap[configContentVector.at(1)].item,//MyFileListItem* item
+					configContentVector.at(0),//filename
+					std::atoll(configContentVector.at(1).c_str()),//id
+					std::atoll(configContentVector.at(2).c_str()),//xIndex
+					std::atoll(configContentVector.at(3).c_str())//yIndex
+				};
+				//configMap[configContentVector.at(0)] = configContentVector.at(1);
+				//index[configContentVector.at(1)] = { std::atoll(configContentVector.at(2).c_str()) ,std::atoll(configContentVector.at(3).c_str()) };
 			}
 			strConfig.erase(strConfig.end()-1);
 			fileNULL:
@@ -65,7 +122,10 @@ MyFileListWidget::MyFileListWidget(QWidget* parent) : QWidget(parent)
 void MyFileListWidget::addItem(MyFileListItem* item, std::string id)
 {
 	item->setParent(this);
-	itemsMap[id] = item;
+	//itemsMap[id] = item;
+	itemsMap[id].item = item;
+	itemsMap[id].filename = item->text().toStdString();
+	itemsMap[id].id = std::atoll(id.c_str());
 	item->setViewMode(viewMode);
 }
 
@@ -84,31 +144,32 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 	if (latticeHeight + horizontalSpacing != 0)
 		latticeHorizontalNum = (height() + horizontalSpacing) / (latticeHeight + horizontalSpacing);
 	latticeHorizontalNum = (latticeHorizontalNum > itemsMap.size() / latticeVerticalNum ? latticeHorizontalNum : itemsMap.size() / latticeVerticalNum);
-	for (llong i = 1; i <= latticeVerticalNum; i++,yNext += latticeHeight+verticalSpacing)
-		YCoords[i] = yNext;
+	for (llong i = 1; i <= latticeVerticalNum; i++, yNext += latticeHeight + verticalSpacing)
+		indexToCoord[i].y = yNext;
 	for (llong i = 1; i <= latticeHorizontalNum; i++, xNext += latticeWidth+horizontalSpacing)
-		XCoords[i] = xNext;
+		indexToCoord[i].x = xNext;
 	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 	{
-		Xindex[iter->first] = rowCount;
-		Yindex[iter->first] = lineCount;
-		lineCount++;
-		if (lineCount > latticeVerticalNum)
-		{
-			lineCount = 1;
-			rowCount++;
-		}
-		if (iter->second->width() > latticeWidth)
-			latticeWidth = iter->second->width();
-		if (iter->second->height() > latticeHeight)
-			latticeHeight = iter->second->height();
+		if (iter->second.item->width() > latticeWidth)//
+			latticeWidth = iter->second.item->width();
+		if (iter->second.item->height() > latticeHeight)
+			latticeHeight = iter->second.item->height();
 	}
 	if (strConfig == "")
 	{
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		{
-			configMap[iter->second->text().toStdString()] = iter->first;
-			iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
+			iter->second.xIndex = rowCount;
+			iter->second.yIndex = lineCount;
+			lineCount++;
+			if (lineCount > latticeVerticalNum)
+			{
+				lineCount = 1;
+				rowCount++;
+			}
+			
+			iter->second.item->move(indexToCoord[iter->second.xIndex].x,indexToCoord[iter->second.yIndex].y);
+			//iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
 			//iter->second->resize(latticeWidth,latticeHeight);
 			//iter->second->show();
 		}
@@ -116,19 +177,20 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 	else {
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		{
-			if (Xindex.count(iter->first) > 0)
-				iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
-			else
-			{
-				configMap[iter->second->text().toStdString()] = iter->first;
-				//找到空出来的位置
-				Xindex[];
-				Yindex[];
-				iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
-			}
+			//if (Xindex.count(iter->first) > 0)
+			//	iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
+			iter->second.item->move(indexToCoord[iter->second.xIndex].x, indexToCoord[iter->second.yIndex].y);
+			//else
+			//{
+			//	configMap[iter->second->text().toStdString()] = iter->first;
+			//	//找到空出来的位置
+
+			//	//iter->second->move(XCoords[Xindex[iter->first]], YCoords[Yindex[iter->first]]);
+			//	iter->second->move(XCoords[index[iter->first].x], YCoords[index[iter->first].y]);
+			//}
 		}
 	}
-	writeConfig(configMap);
+	writeConfig(itemsMap);
 	QWidget::paintEvent(e);
 }
 /*
@@ -147,15 +209,39 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 	}
 */
 
-bool MyFileListWidget::writeConfig(std::unordered_map<std::string, std::string> config_map)
+bool MyFileListWidget::writeConfig(std::map<std::string/*id*/, ItemProp> config_map, std::string 分隔符)
 {
 	using namespace std;
 	fstream fConfig(configFileName,ios::out);
 	if (!fConfig.is_open())
 		return false;
-	for (auto iter = configMap.begin(); iter != configMap.end(); iter++)
-		fConfig << iter->first << " " << iter->second << " " << Xindex[iter->first] << " " << Yindex[iter->first]<<endl;
+	for (auto iter = config_map.begin(); iter != config_map.end(); iter++)
+		fConfig << iter->second.filename << 分隔符
+		<< iter->second.id << 分隔符 
+		<< iter->second.xIndex << 分隔符 
+		<< iter->second.yIndex<< endl;
 	fConfig.flush();
 	fConfig.close();
 	return true;
+}
+
+void MyFileListWidget::desktopItemProc(std::wstring name)
+{
+	if (desktopPath.back() != L'\\')
+		desktopPath += L"\\";
+
+	/*
+	std::wstring comm = L"start \"\" \"";
+	comm += desktopPath;
+	comm += name;
+	comm += L"\"";
+	std::cout << wstr2str_2ANSI(comm).c_str() << std::endl;
+	_wsystem(comm.c_str());
+	//上述语句=下面的
+	//std::cout << UTF8ToANSI(wstr2str_2UTF8(comm)).c_str() << std::endl;
+	//system(wstr2str_2ANSI((comm)).c_str());
+	*/
+
+	std::cout << UTF8ToANSI(wstr2str_2UTF8(name)).c_str() << std::endl;
+	ShellExecute((HWND)this->parentWidget()->winId(), L"open", name.c_str(), L"", desktopPath.c_str(), SW_NORMAL);
 }

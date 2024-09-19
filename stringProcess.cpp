@@ -1,4 +1,42 @@
 #include "stringProcess.h"
+#include <Windows.h>
+std::string wstr2str_2UTF8(std::wstring text)
+{
+	CHAR* str;
+	int Tsize = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, 0, 0, 0, 0);
+	str = new CHAR[Tsize];
+	WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, str, Tsize, 0, 0);
+	std::string str1 = str;
+	delete[]str;
+	return str1;
+}
+std::string wstr2str_2ANSI(std::wstring text)
+{
+	CHAR* str;
+	int Tsize = WideCharToMultiByte(CP_ACP, 0, text.c_str(), -1, 0, 0, 0, 0);
+	str = new CHAR[Tsize];
+	WideCharToMultiByte(CP_ACP, 0, text.c_str(), -1, str, Tsize, 0, 0);
+	std::string str1 = str;
+	delete[]str;
+	return str1;
+}
+
+std::string UTF8ToANSI(std::string utf8Text)
+{
+	WCHAR* wstr;//中间量
+	CHAR* str;//转换后的
+	int Tsize = MultiByteToWideChar(CP_UTF8, 0, utf8Text.c_str(), -1, 0, 0);
+	wstr = new WCHAR[Tsize];
+	MultiByteToWideChar(CP_UTF8, 0, utf8Text.c_str(), -1, wstr, Tsize);
+	Tsize = WideCharToMultiByte(CP_ACP, 0, wstr, -1, 0, 0, 0, 0);
+	str = new CHAR[Tsize];
+	WideCharToMultiByte(CP_ACP, 0, wstr, -1, str, Tsize, 0, 0);
+	std::string wstr1 = str;
+	delete[]str;
+	delete[]wstr;
+	return wstr1;
+}
+
 std::vector<std::string> split(std::string text, std::vector<std::string> delimiter/*separator,分隔符*/, std::string EscapeString /*char EscapeCharacter*/)
 {
 	std::vector<std::string> resultStrVec;

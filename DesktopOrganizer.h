@@ -40,7 +40,6 @@ public:
     ~DesktopOrganizer();
     void paintEvent(QPaintEvent* e) override;
 public slots:
-    void desktopItemProc(std::wstring name);
 private:
     Ui::DesktopOrganizerClass ui;
 };

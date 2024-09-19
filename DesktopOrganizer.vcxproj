@@ -92,6 +92,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="fileProc.cpp" />
     <ClCompile Include="MyFileListItem.cpp" />
     <ClCompile Include="MyFileListWidget.cpp" />
     <ClCompile Include="stringProcess.cpp" />
@@ -107,6 +108,7 @@
     <QtMoc Include="MyFileListItem.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="fileProc.h" />
     <ClInclude Include="MyFileListWidget.h" />
     <ClInclude Include="stringProcess.h" />
   </ItemGroup>

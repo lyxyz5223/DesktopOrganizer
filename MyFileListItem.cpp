@@ -61,7 +61,7 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 #include <Windows.h>
 void MyFileListItem::mouseDoubleClickEvent(QMouseEvent* e)
 {
-	MessageBox(0, L"DoubleClicked!!!", L"", 0);
+	//MessageBox(0, L"DoubleClicked!!!", L"", 0);
 	emit doubleClicked();
 }
 
