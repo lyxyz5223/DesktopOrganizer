@@ -166,10 +166,9 @@ void MyFileListItem::MenuClickedProc(QAction* action)
 		emit doubleClicked();
 	}
 }
-void MyFileListItem::desktopItemProc(std::wstring name)
+void MyFileListItem::desktopItemProc(std::wstring name,std::wstring desktopPath)
 {
-	extern std::wstring desktopPath;
-	if (desktopPath.back() != L'\\')
+	if (desktopPath.back() != L'\\'&&desktopPath.back()!=L'/')
 		desktopPath += L"\\";
 	std::cout << UTF8ToANSI(wstr2str_2UTF8(name)).c_str() << std::endl;
 	ShellExecute((HWND)this->parentWidget()->parentWidget()->winId(), L"open", name.c_str(), L"", desktopPath.c_str(), SW_NORMAL);

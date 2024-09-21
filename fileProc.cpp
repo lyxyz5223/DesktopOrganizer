@@ -6,6 +6,7 @@
 #include <strsafe.h>
 #pragma comment(lib,"Shlwapi.lib")
 #include "fileProc.h"
+#include <vector>
 //获取文件数目
 intptr_t GetFileNum(std::wstring path, bool isCountDirectory)
 {
@@ -101,10 +102,10 @@ unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filear
         MessageBox(0, L"错误，文件数目统计失败！程序即将退出", 0, MB_ICONERROR);
         exit(1);
     }
-    filearray = new wstring * [fileNum + 1];//用的时候指的是前面的中括号filearray[1][2];前面那个中括号里面的索引！
-    for (int i = 0; i < fileNum + 1; i++)
+    filearray = new wstring * [fileNum];//用的时候指的是前面的中括号filearray[1][2];前面那个中括号里面的索引！
+    for (int i = 0; i < fileNum; i++)
     {
-        filearray[i] = new wstring[2];
+        filearray[i] = new wstring[2];//后面的中括号储存判断是文件还是文件夹
     }
     WCHAR* cFilePath;
     cFilePath = (WCHAR*)path.c_str();
@@ -134,7 +135,7 @@ unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filear
         {
             if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
             {
-                wprintf(TEXT("  %s   <DIR>\n"), ffd.cFileName);
+                //wprintf(TEXT("  %s   <DIR>\n"), ffd.cFileName);
                 //这是一个文件夹，名称为：ffd.cFileName
                 filearray[FileIndex][0] = ffd.cFileName;
                 filearray[FileIndex][1] = L"Directory";
@@ -143,11 +144,10 @@ unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filear
             {
                 filesize.LowPart = ffd.nFileSizeLow;
                 filesize.HighPart = ffd.nFileSizeHigh;
-                wprintf(TEXT("  %s   %ld bytes\n"), ffd.cFileName, filesize.QuadPart);
+                //wprintf(TEXT("  %s   %ld bytes\n"), ffd.cFileName, filesize.QuadPart);
                 //这是一个文件，名称为：ffd.cFileName，大小为filesize.QuadPart
                 filearray[FileIndex][0] = ffd.cFileName;
                 filearray[FileIndex][1] = L"File";
-
             }
             FileIndex++;
         }
@@ -160,4 +160,68 @@ unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filear
     }
     FindClose(hFind);
     return dwError;
+}
+std::vector<std::wstring> GetFilesArrayForMultiFilePath(std::vector<std::wstring> pathVector)//标记不同位置的文件及文件夹使用空的元素，空元素的下一个元素即为文件夹位置
+{
+    using namespace std;
+    vector<wstring> resultVector;
+    if (pathVector.empty())//如果路径为空，则使用默认桌面路径，用户桌面和公用桌面
+    {
+        WCHAR cFilePath[MAX_PATH];
+        SHGetFolderPath(NULL, CSIDL_DESKTOP, 0, 0, cFilePath);
+        //MessageBox(HWND_thisApp, cFilePath, L"", 0);
+        pathVector.push_back(cFilePath);
+        SHGetFolderPath(NULL, CSIDL_COMMON_DESKTOPDIRECTORY, 0, 0, cFilePath);
+        pathVector.push_back(cFilePath);
+    }
+    for (wstring path : pathVector)
+    {
+        if (path.back() == L'\\' || path.back() == L'/')
+            path.pop_back();
+        resultVector.push_back(L"");
+        resultVector.push_back(path);//文件夹路径末尾不包含斜杠或者反斜杠
+        //判断文件夹是否存在，不存在自动创建
+        if (PathFileExists(path.c_str()) == TRUE)
+        {
+            //exist
+        }
+        else
+            //do not exist
+            if (CreateDirectory(path.c_str(), 0) == FALSE)
+            {
+                MessageBox(0, L"文件夹不存在且创建失败，请检查你是否有权限，或者尝试以管理员身份运行。程序将退出。", 0, MB_ICONERROR);
+                exit(2);
+            }
+        if (path.back() != L'\\' && path.back() != L'/')
+            path += L"\\";
+        std::wstring** filesList;
+        intptr_t fileNum = GetFileNum(path, true);
+        GetFilesArray(path, filesList, fileNum);
+        for (intptr_t i = 0; i < fileNum; i++)
+        {
+            wstring filesListElement = filesList[i][0];
+            resultVector.push_back(filesListElement);
+        }
+    }
+    return resultVector;
+}
+std::vector<intptr_t> GetDirectoryFromFilesVector(std::vector<std::wstring> filesVector)
+{
+    //返回的路径末尾不带有斜杠或者反斜杠，此函数仅对于GetFilesArrayForMultiFilePath函数返回的vector有效
+    using namespace std;
+    vector<intptr_t> resultVec;
+    bool mask = false;
+    for (intptr_t i = 0; i < filesVector.size(); i++)
+    {
+        if (mask)
+        {
+            resultVec.push_back(i);
+            mask = false;
+        }
+        if (filesVector[i] == L"")
+        {
+            mask = true;
+        }
+    }
+    return resultVec;
 }

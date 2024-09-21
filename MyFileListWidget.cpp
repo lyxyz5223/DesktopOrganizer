@@ -22,55 +22,54 @@
 //My Windows
 #include "fileProc.h"
 //声明&定义
-std::wstring desktopPath = L"";//需要整理并且放于桌面的路径
-void ReadDirectoryChangesProc();
-void LpoverlappedCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped);
+std::wstring j = L"";//需要整理并且放于桌面的路径
+void ReadDirectoryChangesProc(std::wstring path);
 
 MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(parent)
 {
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	using namespace std;
-	WCHAR cFilePath[MAX_PATH];
-	SHGetFolderPath(NULL, CSIDL_DESKTOP, 0, 0, cFilePath);
-	//MessageBox(HWND_thisApp, cFilePath, L"", 0);
-	if(desktopPath == L"")
-		desktopPath = cFilePath;
-	//desktopPath += L"\\MyDesktop\\";
-	//判断文件夹是否存在，不存在自动创建
-	if (PathFileExists(desktopPath.c_str()) == TRUE)
-	{
-		//exist
-	}
-	else
-		//do not exist
-		if (CreateDirectory(desktopPath.c_str(), 0) == FALSE)
-		{
-			MessageBox(0, L"文件夹不存在且创建失败，请检查你是否有权限，或者尝试以管理员身份运行。程序将退出。", 0, MB_ICONERROR);
-			exit(2);
-		}
-	if (desktopPath.back() != L'\\')
-		desktopPath += L"\\";
-	std::wstring** filesList;
-	intptr_t fileNum = GetFileNum(desktopPath, true);
-	GetFilesArray(desktopPath, filesList);
+	vector<wstring> filesVector = GetFilesArrayForMultiFilePath(vector<wstring>());
+	intptr_t fileNum = filesVector.size();
+	vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
+	intptr_t idCount = 0;
+		intptr_t dirIndex = -1;
 	for (intptr_t i = 0; i < fileNum; i++)
 	{
 		MyFileListItem* pLWItem = new MyFileListItem();
 
 		// Get the icon image associated with the item
 		SHFILEINFO sfi;
-		DWORD_PTR dw_ptr = SHGetFileInfo((desktopPath + filesList[i][0]).c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
-		QIcon desktopItemIcon;
-		if (dw_ptr)
-			desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
-		//pLWItem->setIcon(QIcon(desktopItemIcon));
-		pLWItem->setText(wstr2str_2UTF8(filesList[i][0]).c_str());
-		pLWItem->adjustSize();
-		pLWItem->setMyIconSize(64);
-		pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
-		this->addItem(pLWItem, std::to_string(i + 1));
-		connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(filesList[i][0]); });
+		bool THIS_IS_NOT_A_FILE_OR_DIRECTORY = false;
+		for (intptr_t tmpIndex : DirIndexVec)
+		{
+			if (i == tmpIndex)
+			{
+				dirIndex = i;
+				THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
+				break;
+			}
+			else if (i == (tmpIndex - 1))
+				THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
+		}
+		if ((!THIS_IS_NOT_A_FILE_OR_DIRECTORY) && (dirIndex != -1))
+		{
+			wstring fileNameWithPath = (filesVector[dirIndex] + L"\\" + filesVector[i]);
+			DWORD_PTR dw_ptr = SHGetFileInfo(fileNameWithPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
+			QIcon desktopItemIcon;
+			if (dw_ptr)
+				desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
+			//pLWItem->setIcon(QIcon(desktopItemIcon));
+			pLWItem->setText(wstr2str_2UTF8(filesVector[i]).c_str());
+			pLWItem->adjustSize();
+			pLWItem->setMyIconSize(64);
+			pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
+			this->addItem(pLWItem, std::to_string(idCount), wstr2str_2UTF8(fileNameWithPath));
+			idCount++;
+			connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(fileNameWithPath); });
+		}
+
 	}
 
 	fstream fConfig(configFileName, ios::app|ios::out);
@@ -117,8 +116,11 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 		}
 	}
 	fConfig.close();
-	std::thread threadReadDirectoryChange(ReadDirectoryChangesProc);
-	threadReadDirectoryChange.detach();
+	for (intptr_t tmpIndex : DirIndexVec)
+	{
+		std::thread threadReadDirectoryChange(ReadDirectoryChangesProc,filesVector[tmpIndex]);
+		threadReadDirectoryChange.detach();
+	}
 }
 //写split的测试代码
 //std::vector<std::string> aOK;
@@ -130,9 +132,9 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 //for (int i = 0; i < aOK.size(); i++)
 //	cout << UTF8ToANSI(aOK[i]+";");
 
-void ReadDirectoryChangesProc()
+void ReadDirectoryChangesProc(std::wstring path)
 {
-	HANDLE fHandle = CreateFile((desktopPath + L"dd\\").c_str(),
+	HANDLE fHandle = CreateFile((path).c_str(),
 		FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 
 		NULL,
 		OPEN_EXISTING, 
@@ -194,12 +196,12 @@ void ReadDirectoryChangesProc()
 
 }
 
-void MyFileListWidget::addItem(MyFileListItem* item, std::string id)
+void MyFileListWidget::addItem(MyFileListItem* item, std::string id,std::string nameWithPath)
 {
 	item->setParent(this);
 	//itemsMap[id] = item;
 	itemsMap[id].item = item;
-	itemsMap[id].filename = item->text().toStdString();
+	itemsMap[id].filename = nameWithPath;
 	itemsMap[id].id = std::atoll(id.c_str());
 	item->setViewMode(viewMode);
 }
@@ -244,10 +246,18 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 		indexToCoord[i].x = xNext;
 	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 	{
-		if (iter->second.item->width() > latticeWidth)//
-			latticeWidth = iter->second.item->width();
-		if (iter->second.item->height() > latticeHeight)
-			latticeHeight = iter->second.item->height();
+		if (iter->second.item != 0)
+		{
+			if (iter->second.item->width() > latticeWidth)//
+				latticeWidth = iter->second.item->width();
+			if (iter->second.item->height() > latticeHeight)
+				latticeHeight = iter->second.item->height();
+		}
+		else
+		{
+			itemsMap.erase(iter++);
+			iter--;
+		}
 	}
 	if (strConfig == "")
 	{
@@ -319,23 +329,8 @@ bool MyFileListWidget::writeConfig(std::map<std::string/*id*/, ItemProp> config_
 	return true;
 }
 
-void MyFileListWidget::desktopItemProc(std::wstring name)
+void MyFileListWidget::desktopItemProc(std::wstring nameWithPath)
 {
-	if (desktopPath.back() != L'\\')
-		desktopPath += L"\\";
-
-	/*
-	std::wstring comm = L"start \"\" \"";
-	comm += desktopPath;
-	comm += name;
-	comm += L"\"";
-	std::cout << wstr2str_2ANSI(comm).c_str() << std::endl;
-	_wsystem(comm.c_str());
-	//上述语句=下面的
-	//std::cout << UTF8ToANSI(wstr2str_2UTF8(comm)).c_str() << std::endl;
-	//system(wstr2str_2ANSI((comm)).c_str());
-	*/
-
-	std::cout << UTF8ToANSI(wstr2str_2UTF8(name)).c_str() << std::endl;
-	ShellExecute(0, L"open", name.c_str(), L"", desktopPath.c_str(), SW_NORMAL);
+	std::cout << UTF8ToANSI(wstr2str_2UTF8(nameWithPath)).c_str() << std::endl;
+	ShellExecute(0, L"open", nameWithPath.c_str(), L"", 0, SW_NORMAL);
 }

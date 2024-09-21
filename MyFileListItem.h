@@ -30,7 +30,7 @@ signals:
 
 public slots:
 	void MenuClickedProc(QAction* action);
-	void desktopItemProc(std::wstring name);
+	void desktopItemProc(std::wstring name,std::wstring desktopPath);
 private:
 	ViewMode viewMode = ViewMode::List;
 	double MyIconSize = 50;

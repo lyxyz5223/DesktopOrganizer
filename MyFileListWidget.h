@@ -11,18 +11,18 @@ public:
 	void setViewMode(MyFileListItem::ViewMode vm) {
 		viewMode = vm;
 	}
-	void addItem(MyFileListItem* item, std::string id);
+	void addItem(MyFileListItem* item, std::string id,std::string nameWithPath);
 	void setConfigFileName(std::string File_Name){
 		configFileName = File_Name;
 	}
 public slots:
-	void desktopItemProc(std::wstring name);
+	void desktopItemProc(std::wstring nameWithPath);
 
 private:
 	typedef long long llong;
 	struct ItemProp {
 		MyFileListItem* item;
-		std::string filename;
+		std::string filename;//WithPath!!!
 		llong id;
 		llong xIndex;
 		llong yIndex;
