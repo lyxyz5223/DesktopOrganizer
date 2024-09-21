@@ -238,8 +238,8 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 	if (latticeHeight + verticalSpacing != 0)
 		latticeVerticalNum = (height() + verticalSpacing) / (latticeHeight + verticalSpacing);
 	if (latticeHeight + horizontalSpacing != 0)
-		latticeHorizontalNum = (height() + horizontalSpacing) / (latticeHeight + horizontalSpacing);
-	latticeHorizontalNum = (latticeHorizontalNum > itemsMap.size() / latticeVerticalNum ? latticeHorizontalNum : itemsMap.size() / latticeVerticalNum);
+		latticeHorizontalNum = (width() + horizontalSpacing) / (latticeWidth + horizontalSpacing);
+	latticeHorizontalNum = ((latticeHorizontalNum > (itemsMap.size() / latticeVerticalNum)) ? latticeHorizontalNum : (itemsMap.size() / latticeVerticalNum));
 	for (llong i = 1; i <= latticeVerticalNum; i++, yNext += latticeHeight + verticalSpacing)
 		indexToCoord[i].y = yNext;
 	for (llong i = 1; i <= latticeHorizontalNum; i++, xNext += latticeWidth+horizontalSpacing)
