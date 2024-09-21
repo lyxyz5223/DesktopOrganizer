@@ -12,6 +12,7 @@
 //#include <array>
 #include "stringProcess.h"
 #include <cstdlib>
+#include <thread>
 
 //Windows
 #include <Windows.h>
@@ -20,9 +21,12 @@
 #pragma comment(lib,"Shlwapi.lib")
 //My Windows
 #include "fileProc.h"
+//声明&定义
 std::wstring desktopPath = L"";//需要整理并且放于桌面的路径
+void ReadDirectoryChangesProc();
+void LpoverlappedCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped);
 
-MyFileListWidget::MyFileListWidget(QWidget* parent,QString path) : QWidget(parent)
+MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(parent)
 {
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
@@ -113,7 +117,8 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path) : QWidget(paren
 		}
 	}
 	fConfig.close();
-	
+	std::thread threadReadDirectoryChange(ReadDirectoryChangesProc);
+	threadReadDirectoryChange.detach();
 }
 //写split的测试代码
 //std::vector<std::string> aOK;
@@ -124,6 +129,70 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path) : QWidget(paren
 //aOK = split(toDo,deli);
 //for (int i = 0; i < aOK.size(); i++)
 //	cout << UTF8ToANSI(aOK[i]+";");
+
+void ReadDirectoryChangesProc()
+{
+	HANDLE fHandle = CreateFile((desktopPath + L"dd\\").c_str(),
+		FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 
+		NULL,
+		OPEN_EXISTING, 
+		FILE_FLAG_BACKUP_SEMANTICS,
+		0);
+	while(true)
+	{
+		if (fHandle != INVALID_HANDLE_VALUE)
+		{
+			DWORD dwBytesReturn = 0;
+			BYTE buf[1024] = {};
+			FILE_NOTIFY_INFORMATION* lpBuffer = (FILE_NOTIFY_INFORMATION*)buf;
+			BOOL RDCresult = ReadDirectoryChangesW(fHandle,
+				&buf,
+				sizeof(buf),
+				FALSE,
+				FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME,
+				&dwBytesReturn,
+				0,
+				0);
+			if (RDCresult)
+			{
+				switch (lpBuffer->Action)
+				{
+				case FILE_ACTION_ADDED:
+				{
+					std::wcout << L"创建：" << lpBuffer->FileName << std::endl;
+				}
+				break;
+				case FILE_ACTION_REMOVED:
+				{
+					std::wcout << L"删除：" << lpBuffer->FileName << std::endl;
+				}
+				break;
+				case FILE_ACTION_RENAMED_OLD_NAME:
+				{
+					std::wcout << L"重命名：" << lpBuffer->FileName << std::endl;
+					// 获取新文件名的条目
+					FILE_NOTIFY_INFORMATION* offsetFNImformation = (FILE_NOTIFY_INFORMATION*)((LPBYTE)lpBuffer + lpBuffer->NextEntryOffset);
+					if (offsetFNImformation->Action == FILE_ACTION_RENAMED_NEW_NAME)
+					{
+						// 新文件名
+						std::wstring newName(lpBuffer->FileName, lpBuffer->FileNameLength / sizeof(WCHAR));
+						std::cout << UTF8ToANSI("        ╰->");
+						std::wcout << offsetFNImformation->FileName << std::endl;
+					}
+				}
+				break;
+				//case FILE_ACTION_RENAMED_NEW_NAME://貌似这个无效
+				//{
+				//	std::wcout << L"重命名（新）：" << lpBuffer->FileName << std::endl;
+				//}
+				//break;
+
+				}
+			}
+		}
+	}
+
+}
 
 void MyFileListWidget::addItem(MyFileListItem* item, std::string id)
 {
@@ -268,5 +337,5 @@ void MyFileListWidget::desktopItemProc(std::wstring name)
 	*/
 
 	std::cout << UTF8ToANSI(wstr2str_2UTF8(name)).c_str() << std::endl;
-	ShellExecute((HWND)this->parentWidget()->winId(), L"open", name.c_str(), L"", desktopPath.c_str(), SW_NORMAL);
+	ShellExecute(0, L"open", name.c_str(), L"", desktopPath.c_str(), SW_NORMAL);
 }
