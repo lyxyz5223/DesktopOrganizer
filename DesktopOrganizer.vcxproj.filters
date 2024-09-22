@@ -63,11 +63,11 @@
     <QtMoc Include="MyFileListItem.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="MyFileListWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="MyFileListWidget.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="stringProcess.h">
       <Filter>Header Files</Filter>
     </ClInclude>

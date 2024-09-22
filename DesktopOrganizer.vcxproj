@@ -109,7 +109,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="fileProc.h" />
-    <ClInclude Include="MyFileListWidget.h" />
+    <QtMoc Include="MyFileListWidget.h" />
     <ClInclude Include="stringProcess.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
