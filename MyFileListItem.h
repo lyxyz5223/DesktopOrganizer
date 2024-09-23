@@ -19,6 +19,14 @@ public:
 		MyIconSize = ICONSIZE;
 	}
 	void adjustSize();
+	void setPath(std::wstring path)
+	{
+		MyPath = path;
+	}
+	std::wstring getPath()
+	{
+		return MyPath;
+	}
 
 protected:
 	void mousePressEvent(QMouseEvent* e);
@@ -27,6 +35,7 @@ protected:
 
 signals:
 	void doubleClicked();
+	void deleteItem();
 
 public slots:
 	void MenuClickedProc(QAction* action);
@@ -37,5 +46,6 @@ private:
 	QImage itemImage;
 	QIcon itemIcon = icon();
 	QSize itemTextSize;
+	std::wstring MyPath;
 };
 

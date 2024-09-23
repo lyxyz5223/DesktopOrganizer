@@ -27,11 +27,11 @@
 std::string deletedMaskStr = "<deleted>";
 #define ICONSIZE 64
 std::wstring j = L"";//需要整理并且放于桌面的路径
-void ReadDirectoryChangesProc(std::wstring path);
-MyFileListWidget* thisWidget;
+//MyFileListWidget* thisWidget;
+
 MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(parent)
 {
-	thisWidget = this;
+	//thisWidget = this;
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	resizeZero();
@@ -68,12 +68,14 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 				desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
 			//pLWItem->setIcon(QIcon(desktopItemIcon));
 			pLWItem->setText(wstr2str_2UTF8(filesVector[i]).c_str());
+			pLWItem->setPath(filesVector[dirIndex]);
 			pLWItem->adjustSize();
 			pLWItem->setMyIconSize(ICONSIZE);
 			pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
 			this->addItem(pLWItem/*, std::to_string(idCount)*/, wstr2str_2UTF8(fileNameWithPath));
 			//idCount++;
 			connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(fileNameWithPath); });
+			connect(pLWItem, &MyFileListItem::deleteItem, this, [=]() {DeleteItem(pLWItem->text().toStdWString(),pLWItem->getPath()); });
 		}
 
 	}
@@ -133,7 +135,7 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 	//connect(this, SIGNAL(createItem(std::wstring, std::wstring)), this, SLOT(CreateItem(std::wstring, std::wstring)));
 	for (intptr_t tmpIndex : DirIndexVec)
 	{
-		std::thread threadReadDirectoryChange(ReadDirectoryChangesProc,filesVector[tmpIndex]);
+		std::thread threadReadDirectoryChange(&MyFileListWidget::threadReadDirectoryChangesProc,this,filesVector[tmpIndex]);
 		threadReadDirectoryChange.detach();
 	}
 }
@@ -204,10 +206,10 @@ void MyFileListWidget::initialize()
 
 }
 
-void ReadDirectoryChangesProc(std::wstring path)
+void MyFileListWidget::threadReadDirectoryChangesProc(std::wstring path)
 {
 	typedef long long llong;
-	auto &itemsMap = thisWidget->itemsMap;
+	//auto &itemsMap = thisWidget->itemsMap;
 	HANDLE fHandle = CreateFile((path).c_str(),
 		FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 
 		NULL,
@@ -238,13 +240,13 @@ void ReadDirectoryChangesProc(std::wstring path)
 					std::wcout << L"创建：" << lpBuffer->FileName << std::endl;
 					std::wstring filewithpath = path + L"\\";
 					filewithpath += lpBuffer->FileName;
-					thisWidget->SendCreateItemSignal(lpBuffer->FileName, path);
+					SendCreateItemSignal(lpBuffer->FileName, path);
 				}
 				break;
 				case FILE_ACTION_REMOVED:
 				{
 					std::wcout << L"删除：" << lpBuffer->FileName << std::endl;
-					thisWidget->SendDeleteItemSignal(lpBuffer->FileName, path);
+					SendDeleteItemSignal(lpBuffer->FileName, path);
 				}
 				break;
 				case FILE_ACTION_RENAMED_OLD_NAME:
@@ -354,12 +356,14 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 			desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
 		MyFileListItem* pLWItem = new MyFileListItem();
 		pLWItem->setText(wstr2str_2UTF8(name).c_str());
+		pLWItem->setPath(path);
 		pLWItem->adjustSize();
 		pLWItem->setMyIconSize(ICONSIZE);
 		pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
 		addItem(pLWItem/*, std::to_string(itemsMapElement1.id)*/, wstr2str_2UTF8(namewithpath));
 		pLWItem->move(indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].xIndex].x, indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].yIndex].y);
 		connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(namewithpath); });
+		connect(pLWItem, &MyFileListItem::deleteItem, this, [=]() {DeleteItem(pLWItem->text().toStdWString(), pLWItem->getPath()); });
 		pLWItem->show();
 		initialize();
 	}

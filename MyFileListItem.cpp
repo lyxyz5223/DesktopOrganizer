@@ -150,6 +150,7 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 		menu1->addSeparator();
 		menu1->addAction(QIcon(), "打开方式");
 		menu1->addAction(QIcon(), "刷新");
+		menu1->addAction(QIcon(), "删除");
 		connect(menu1, SIGNAL(triggered(QAction*)), this, SLOT(MenuClickedProc(QAction*)));
 		menu1->exec(QCursor::pos());
 		break;
@@ -164,6 +165,10 @@ void MyFileListItem::MenuClickedProc(QAction* action)
 	if (action->text() == "打开")
 	{
 		emit doubleClicked();
+	}
+	else if (action->text() == "删除")
+	{
+		emit deleteItem();
 	}
 }
 void MyFileListItem::desktopItemProc(std::wstring name,std::wstring desktopPath)

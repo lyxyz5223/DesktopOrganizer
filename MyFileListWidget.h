@@ -28,7 +28,7 @@ public:
 	void setConfigFileName(std::string File_Name){
 		configFileName = File_Name;
 	}
-
+	void threadReadDirectoryChangesProc(std::wstring path);
 	typedef long long llong;
 	struct ItemProp {
 		MyFileListItem* item;
