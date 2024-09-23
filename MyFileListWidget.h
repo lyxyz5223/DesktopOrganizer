@@ -17,6 +17,10 @@ public:
 		QWidget::resize(size);
 		initialize();
 	}
+	void resizeZero()
+	{
+		QWidget::resize(0, 0);
+	}
 	void setViewMode(MyFileListItem::ViewMode vm) {
 		viewMode = vm;
 	}
@@ -45,17 +49,24 @@ public:
 	llong lastYindex = 1;
 	std::map<std::string/*nameWithPath*/, ItemProp> itemsMap;
 	//std::map<std::string/*nameWithPath*/, std::string/*id*/> idMap;
-	void c(std::wstring name, std::wstring path)
+	void SendCreateItemSignal(std::wstring name, std::wstring path)
 	{
 		emit createItem(name, path);
+	}
+	void SendDeleteItemSignal(std::wstring name, std::wstring path)
+	{
+		emit deleteItem(name,path);
 	}
 
 signals:
 	void createItem(std::wstring, std::wstring);
+	void deleteItem(std::wstring, std::wstring);
 
 public slots:
 	void desktopItemProc(std::wstring nameWithPath);
 	void CreateItem(std::wstring name, std::wstring path);
+	void DeleteItem(std::wstring name, std::wstring path);
+
 private:
 	struct lPoint {
 		llong x;

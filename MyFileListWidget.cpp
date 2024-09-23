@@ -34,6 +34,7 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 	thisWidget = this;
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
+	resizeZero();
 	using namespace std;
 	vector<wstring> filesVector = GetFilesArrayForMultiFilePath(vector<wstring>());
 	intptr_t fileNum = filesVector.size();
@@ -128,6 +129,7 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 	fConfig.close();
 	initialize();
 	connect(this, &MyFileListWidget::createItem, this, &MyFileListWidget::CreateItem);
+	connect(this, &MyFileListWidget::deleteItem, this, &MyFileListWidget::DeleteItem);
 	//connect(this, SIGNAL(createItem(std::wstring, std::wstring)), this, SLOT(CreateItem(std::wstring, std::wstring)));
 	for (intptr_t tmpIndex : DirIndexVec)
 	{
@@ -143,7 +145,7 @@ void MyFileListWidget::initialize()
 		xNext = 初始的x坐标,
 		rowCount = 1,
 		lineCount = 1;
-	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); )
 	{
 		if (iter->second.item != 0)
 		{
@@ -151,27 +153,34 @@ void MyFileListWidget::initialize()
 				latticeWidth = iter->second.item->width();
 			if (iter->second.item->height() > latticeHeight)
 				latticeHeight = iter->second.item->height();
+			iter++;
 		}
 		else
 		{
-			itemsMap.erase(iter++);
-			iter--;
+			if (iter->second.filename.find(deletedMaskStr) == std::string::npos)
+				itemsMap.erase(iter++);
+			else
+				iter++;
 		}
 	}
 	if (latticeHeight + verticalSpacing != 0)
 		latticeVerticalNum = (height() + verticalSpacing) / (latticeHeight + verticalSpacing);
 	if (latticeHeight + horizontalSpacing != 0)
 		latticeHorizontalNum = (width() + horizontalSpacing) / (latticeWidth + horizontalSpacing);
-	latticeHorizontalNum = ((latticeHorizontalNum > ceil(float(itemsMap.size()) / latticeVerticalNum)) ? latticeHorizontalNum : ceil(float(itemsMap.size()) / latticeVerticalNum));
-	lastXindex = ceil(float(itemsMap.size()) / latticeVerticalNum);
-	lastYindex = itemsMap.size() % latticeVerticalNum;
+	if (latticeVerticalNum != 0)
+	{
+		latticeHorizontalNum = ((latticeHorizontalNum > ceil(float(itemsMap.size()) / latticeVerticalNum)) ? latticeHorizontalNum : ceil(float(itemsMap.size()) / latticeVerticalNum));
+		lastXindex = ceil(float(itemsMap.size()) / latticeVerticalNum);
+		lastYindex = itemsMap.size() % latticeVerticalNum;
+	}
 	for (llong i = 1; i <= latticeVerticalNum; i++, yNext += latticeHeight + verticalSpacing)
 		indexToCoord[i].y = yNext;
 	for (llong i = 1; i <= latticeHorizontalNum; i++, xNext += latticeWidth + horizontalSpacing)
 		indexToCoord[i].x = xNext;
 	if (strConfig == "")
 	{
-		strConfig = "lyxyz5223";
+		if (size().width() != 0 && size().height() != 0)
+			strConfig = "lyxyz5223";
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		{
 			iter->second.xIndex = rowCount;
@@ -188,7 +197,8 @@ void MyFileListWidget::initialize()
 	else {
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		{
-			iter->second.item->move(indexToCoord[iter->second.xIndex].x, indexToCoord[iter->second.yIndex].y);
+			if(iter->second.item != 0)
+				iter->second.item->move(indexToCoord[iter->second.xIndex].x, indexToCoord[iter->second.yIndex].y);
 		}
 	}
 
@@ -228,44 +238,13 @@ void ReadDirectoryChangesProc(std::wstring path)
 					std::wcout << L"创建：" << lpBuffer->FileName << std::endl;
 					std::wstring filewithpath = path + L"\\";
 					filewithpath += lpBuffer->FileName;
-					if (!(itemsMap.count(wstr2str_2UTF8(filewithpath)) > 0))
-					{
-						if (thisWidget->deletedCount > 0)
-						{
-							llong tmpDeletedCount = thisWidget->deletedCount--;
-							itemsMap[(wstr2str_2UTF8(filewithpath))] = itemsMap[deletedMaskStr+std::to_string(tmpDeletedCount)];
-							itemsMap.erase(deletedMaskStr + std::to_string(tmpDeletedCount));
-						}
-						else
-						{
-							std::wstring tmpFileName = lpBuffer->FileName;
-							itemsMap[(wstr2str_2UTF8(filewithpath))] = {
-								itemsMap[(wstr2str_2UTF8(filewithpath))].item,
-								wstr2str_2UTF8(tmpFileName),
-								(thisWidget->lastYindex < thisWidget->latticeVerticalNum?thisWidget->lastXindex: thisWidget->lastXindex+1),
-								(thisWidget->lastYindex < thisWidget->latticeVerticalNum ? thisWidget->lastYindex+1 : 1),
-							};
-						}
-						thisWidget->c(lpBuffer->FileName, path);
-					}
+					thisWidget->SendCreateItemSignal(lpBuffer->FileName, path);
 				}
 				break;
 				case FILE_ACTION_REMOVED:
 				{
 					std::wcout << L"删除：" << lpBuffer->FileName << std::endl;
-					std::wstring filewithpath = path + L"\\";
-					filewithpath += lpBuffer->FileName;
-					if (thisWidget->itemsMap.count(wstr2str_2UTF8(filewithpath)) > 0)
-					{
-						++thisWidget->deletedCount;
-						std::string tmpstr = deletedMaskStr;
-						tmpstr += std::to_string(thisWidget->deletedCount);
-						thisWidget->itemsMap[tmpstr] = itemsMap[wstr2str_2UTF8(filewithpath)];//可以是/:\*?|"<>这几个符号
-						thisWidget->itemsMap[tmpstr].item = 0;
-						thisWidget->itemsMap.erase(wstr2str_2UTF8(filewithpath));
-						thisWidget->itemsMap[wstr2str_2UTF8(filewithpath)].item->disconnect();
-						thisWidget->itemsMap[wstr2str_2UTF8(filewithpath)].item->deleteLater();
-					}
+					thisWidget->SendDeleteItemSignal(lpBuffer->FileName, path);
 				}
 				break;
 				case FILE_ACTION_RENAMED_OLD_NAME:
@@ -351,19 +330,62 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 {
 	std::wstring namewithpath = path + L"\\";
 	namewithpath += name;
-	SHFILEINFO sfi = { 0 };
-	DWORD_PTR dw_ptr = SHGetFileInfo(namewithpath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
-	QIcon desktopItemIcon;
-	if (dw_ptr)
-		desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
-	MyFileListItem* pLWItem = new MyFileListItem(thisWidget);
-	pLWItem->setText(wstr2str_2UTF8(name).c_str());
-	pLWItem->adjustSize();
-	pLWItem->setMyIconSize(ICONSIZE);
-	pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
-	addItem(pLWItem/*, std::to_string(itemsMapElement1.id)*/, wstr2str_2UTF8(namewithpath));
-	connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(namewithpath); });
-	initialize();
+	if (!(itemsMap.count(wstr2str_2UTF8(namewithpath)) > 0))
+	{
+		if (deletedCount > 0)
+		{
+			llong tmpDeletedCount = deletedCount--;
+			itemsMap[(wstr2str_2UTF8(namewithpath))] = itemsMap[deletedMaskStr + std::to_string(tmpDeletedCount)];
+			itemsMap.erase(deletedMaskStr + std::to_string(tmpDeletedCount));
+		}
+		else
+		{
+			itemsMap[(wstr2str_2UTF8(namewithpath))] = {
+				itemsMap[(wstr2str_2UTF8(namewithpath))].item,
+				wstr2str_2UTF8(name),
+				(lastYindex < latticeVerticalNum ? lastXindex : lastXindex + 1),
+				(lastYindex < latticeVerticalNum ? lastYindex + 1 : 1),
+			};
+		}
+		SHFILEINFO sfi = { 0 };
+		DWORD_PTR dw_ptr = SHGetFileInfo(namewithpath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
+		QIcon desktopItemIcon;
+		if (dw_ptr)
+			desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
+		MyFileListItem* pLWItem = new MyFileListItem();
+		pLWItem->setText(wstr2str_2UTF8(name).c_str());
+		pLWItem->adjustSize();
+		pLWItem->setMyIconSize(ICONSIZE);
+		pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
+		addItem(pLWItem/*, std::to_string(itemsMapElement1.id)*/, wstr2str_2UTF8(namewithpath));
+		pLWItem->move(indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].xIndex].x, indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].yIndex].y);
+		connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(namewithpath); });
+		pLWItem->show();
+		initialize();
+	}
+}
+
+void MyFileListWidget::DeleteItem(std::wstring name, std::wstring path)
+{
+	std::wstring namewithpath = path + L"\\";
+	namewithpath += name;
+	if (itemsMap.count(wstr2str_2UTF8(namewithpath)) > 0)
+	{
+		++deletedCount;
+		std::string tmpstr = deletedMaskStr + std::to_string(deletedCount);
+
+		itemsMap[wstr2str_2UTF8(namewithpath)].item->hide();
+		disconnect(itemsMap[wstr2str_2UTF8(namewithpath)].item);
+		destroyed(itemsMap[wstr2str_2UTF8(namewithpath)].item);
+
+		itemsMap[wstr2str_2UTF8(namewithpath)].item = 0;
+		itemsMap[wstr2str_2UTF8(namewithpath)].filename = tmpstr;
+		itemsMap[tmpstr] = itemsMap[wstr2str_2UTF8(namewithpath)];//可以是/:\*?|"<>这几个符号
+		//itemsMap[tmpstr].item = 0;
+		itemsMap.erase(wstr2str_2UTF8(namewithpath));
+		//itemsMap[wstr2str_2UTF8(namewithpath)].item->deleteLater();
+	}
+
 }
 
 bool MyFileListWidget::writeConfig(std::map<std::string/*id*/, ItemProp> config_map, std::string 分隔符)
