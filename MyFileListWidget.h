@@ -29,6 +29,8 @@ public:
 		configFileName = File_Name;
 	}
 	void threadReadDirectoryChangesProc(std::wstring path);
+	void threadCheckFilesChange();
+
 	typedef long long llong;
 	struct ItemProp {
 		MyFileListItem* item;
@@ -37,6 +39,11 @@ public:
 		llong xIndex;
 		llong yIndex;
 	};
+	struct lPoint {
+		llong x;
+		llong y;
+	};
+
 	llong horizontalSpacing = 10;//桌面图标水平间距
 	llong verticalSpacing = 10;//桌面图标垂直间距
 	llong latticeWidth = 0, //桌面图标宽度
@@ -44,11 +51,12 @@ public:
 		latticeVerticalNum = 0,//桌面图标垂直数量
 		latticeHorizontalNum = 0;//桌面图标水平数量
 
-	llong deletedCount = 0;//删除计数
-	llong lastXindex = 1;
-	llong lastYindex = 1;
+	//llong deletedCount = 0;//删除计数
+	//llong lastXindex = 1;
+	//llong lastYindex = 1;
 	std::map<std::string/*nameWithPath*/, ItemProp> itemsMap;
 	//std::map<std::string/*nameWithPath*/, std::string/*id*/> idMap;
+	std::map<std::pair<llong,llong>/**/, bool> latticeJudge;
 	void SendCreateItemSignal(std::wstring name, std::wstring path)
 	{
 		emit createItem(name, path);
@@ -57,7 +65,6 @@ public:
 	{
 		emit deleteItem(name,path);
 	}
-
 signals:
 	void createItem(std::wstring, std::wstring);
 	void deleteItem(std::wstring, std::wstring);
@@ -68,10 +75,6 @@ public slots:
 	void DeleteItem(std::wstring name, std::wstring path);
 
 private:
-	struct lPoint {
-		llong x;
-		llong y;
-	};
 	std::string strConfig = "";
 	std::string configFileName = "config.ini";
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;

@@ -58,6 +58,9 @@
     <ClCompile Include="fileProc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="vectorProcess.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="MyFileListItem.h">
@@ -72,6 +75,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="fileProc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vectorProcess.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -25,8 +25,9 @@ intptr_t GetFileNum(std::wstring path, bool isCountDirectory)
     hFind = FindFirstFile(path.c_str(), &ffd);
     if (INVALID_HANDLE_VALUE == hFind)
     {
-        DisplayErrorBox(TEXT("FindFirstFile"));
+        //DisplayErrorBox(TEXT("FindFirstFile"));
         //return dwError;
+        return -1;
     }
     // List all the files in the directory with some info about them.
     do
@@ -54,59 +55,123 @@ intptr_t GetFileNum(std::wstring path, bool isCountDirectory)
     dwError = GetLastError();
     if (dwError != ERROR_NO_MORE_FILES)
     {
-        DisplayErrorBox(TEXT("FindFirstFile"));
+        //DisplayErrorBox(TEXT("FindFirstFile"));
+        return -1;
     }
+    ZeroMemory(&ffd, sizeof(ffd));
+
     FindClose(hFind);
     //return dwError;
     return fileNum;
 }
 //微软官方示例，展示错误
-void DisplayErrorBox(const wchar_t* lpszFunction1)
-{
-    // Retrieve the system error message for the last-error code
-    LPTSTR lpszFunction = (LPTSTR)lpszFunction1;
-    LPVOID lpMsgBuf;
-    LPVOID lpDisplayBuf;
-    DWORD dw = GetLastError();
+//void DisplayErrorBox(const wchar_t* lpszFunction1)
+//{
+//    // Retrieve the system error message for the last-error code
+//    LPTSTR lpszFunction = (LPTSTR)lpszFunction1;
+//    LPVOID lpMsgBuf;
+//    LPVOID lpDisplayBuf;
+//    DWORD dw = GetLastError();
+//
+//    FormatMessage(
+//        FORMAT_MESSAGE_ALLOCATE_BUFFER |
+//        FORMAT_MESSAGE_FROM_SYSTEM |
+//        FORMAT_MESSAGE_IGNORE_INSERTS,
+//        NULL,
+//        dw,
+//        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+//        (LPTSTR)&lpMsgBuf,
+//        0, NULL);
+//
+//    // Display the error message and clean up
+//
+//    lpDisplayBuf = (LPVOID)LocalAlloc(LMEM_ZEROINIT,
+//        (lstrlen((LPCTSTR)lpMsgBuf) + lstrlen((LPCTSTR)lpszFunction) + 40) * sizeof(TCHAR));
+//    StringCchPrintf((LPTSTR)lpDisplayBuf,
+//        LocalSize(lpDisplayBuf) / sizeof(TCHAR),
+//        TEXT("%s failed with error %d: %s"),
+//        lpszFunction, dw, lpMsgBuf);
+//    MessageBox(NULL, (LPCTSTR)lpDisplayBuf, TEXT("Error"), MB_OK);
+//
+//    LocalFree(lpMsgBuf);
+//    LocalFree(lpDisplayBuf);
+//}
 
-    FormatMessage(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER |
-        FORMAT_MESSAGE_FROM_SYSTEM |
-        FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
-        dw,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPTSTR)&lpMsgBuf,
-        0, NULL);
+//unsigned long GetFilesArray(std::wstring path, std::wstring**& filearray,intptr_t fileNum)//返回错误代码
+//{
+//    using namespace std;
+//    if (fileNum == 0)
+//        fileNum = GetFileNum(path, true);
+//    if (fileNum < 0)
+//    {
+//        MessageBox(0, L"错误，文件数目统计失败！程序即将退出", 0, MB_ICONERROR);
+//        exit(1);
+//    }
+//    if (fileNum == 0)
+//        return 0;
+//    filearray = new wstring * [fileNum];//用的时候指的是前面的中括号filearray[1][2];前面那个中括号里面的索引！
+//    for (int i = 0; i < fileNum; i++)
+//    {
+//        filearray[i] = new wstring[2];//后面的中括号储存判断是文件还是文件夹
+//    }
+//    WCHAR* cFilePath;
+//    cFilePath = (WCHAR*)path.c_str();
+//
+//    intptr_t FileIndex = 0;
+//    WIN32_FIND_DATA ffd;
+//    LARGE_INTEGER filesize;
+//    //TCHAR szDir[MAX_PATH];
+//    HANDLE hFind = INVALID_HANDLE_VALUE;
+//    DWORD dwError = 0;
+//    if (path.back() != L'\\')
+//        path += L"\\";
+//    path += L"*";
+//    // Find the first file in the directory.
+//    hFind = FindFirstFile(path.c_str(), &ffd);
+//
+//    if (INVALID_HANDLE_VALUE == hFind)
+//    {
+//        //DisplayErrorBox(TEXT("FindFirstFile"));
+//        return dwError;
+//    }
+//    // List all the files in the directory with some info about them.
+//    do
+//    {
+//        if (wcscmp(ffd.cFileName, L".") != 0
+//            && wcscmp(ffd.cFileName, L"..") != 0)
+//        {
+//            if (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+//            {
+//                //wprintf(TEXT("  %s   <DIR>\n"), ffd.cFileName);
+//                //这是一个文件夹，名称为：ffd.cFileName
+//                filearray[FileIndex][0] = ffd.cFileName;
+//                filearray[FileIndex][1] = L"Directory";
+//            }
+//            else
+//            {
+//                filesize.LowPart = ffd.nFileSizeLow;
+//                filesize.HighPart = ffd.nFileSizeHigh;
+//                //wprintf(TEXT("  %s   %ld bytes\n"), ffd.cFileName, filesize.QuadPart);
+//                //这是一个文件，名称为：ffd.cFileName，大小为filesize.QuadPart
+//                filearray[FileIndex][0] = ffd.cFileName;
+//                filearray[FileIndex][1] = L"File";
+//            }
+//            FileIndex++;
+//        }
+//    } while (FindNextFile(hFind, &ffd) != 0);
+//
+//    dwError = GetLastError();
+//    if (dwError != ERROR_NO_MORE_FILES)
+//    {
+//        //DisplayErrorBox(TEXT("FindFirstFile"));
+//    }
+//    FindClose(hFind);
+//    return dwError;
+//}
 
-    // Display the error message and clean up
-
-    lpDisplayBuf = (LPVOID)LocalAlloc(LMEM_ZEROINIT,
-        (lstrlen((LPCTSTR)lpMsgBuf) + lstrlen((LPCTSTR)lpszFunction) + 40) * sizeof(TCHAR));
-    StringCchPrintf((LPTSTR)lpDisplayBuf,
-        LocalSize(lpDisplayBuf) / sizeof(TCHAR),
-        TEXT("%s failed with error %d: %s"),
-        lpszFunction, dw, lpMsgBuf);
-    MessageBox(NULL, (LPCTSTR)lpDisplayBuf, TEXT("Error"), MB_OK);
-
-    LocalFree(lpMsgBuf);
-    LocalFree(lpDisplayBuf);
-}
-unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filearray, _In_ intptr_t fileNum)//返回错误代码
+long long GetFilesArray(std::wstring path, std::vector<std::wstring*> &filesVector)//返回错误代码
 {
     using namespace std;
-    if (fileNum == 0)
-        fileNum = GetFileNum(path, true);
-    if (fileNum <= 0)
-    {
-        MessageBox(0, L"错误，文件数目统计失败！程序即将退出", 0, MB_ICONERROR);
-        exit(1);
-    }
-    filearray = new wstring * [fileNum];//用的时候指的是前面的中括号filearray[1][2];前面那个中括号里面的索引！
-    for (int i = 0; i < fileNum; i++)
-    {
-        filearray[i] = new wstring[2];//后面的中括号储存判断是文件还是文件夹
-    }
     WCHAR* cFilePath;
     cFilePath = (WCHAR*)path.c_str();
 
@@ -124,7 +189,7 @@ unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filear
 
     if (INVALID_HANDLE_VALUE == hFind)
     {
-        DisplayErrorBox(TEXT("FindFirstFile"));
+        //DisplayErrorBox(TEXT("FindFirstFile"));
         return dwError;
     }
     // List all the files in the directory with some info about them.
@@ -137,8 +202,10 @@ unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filear
             {
                 //wprintf(TEXT("  %s   <DIR>\n"), ffd.cFileName);
                 //这是一个文件夹，名称为：ffd.cFileName
-                filearray[FileIndex][0] = ffd.cFileName;
-                filearray[FileIndex][1] = L"Directory";
+                wstring* tmpwstringarray = new wstring[2];
+                tmpwstringarray[0] = ffd.cFileName;
+                tmpwstringarray[1] = L"Directory";
+                filesVector.push_back(tmpwstringarray);
             }
             else
             {
@@ -146,21 +213,23 @@ unsigned long GetFilesArray(_In_ std::wstring path, _Out_ std::wstring**& filear
                 filesize.HighPart = ffd.nFileSizeHigh;
                 //wprintf(TEXT("  %s   %ld bytes\n"), ffd.cFileName, filesize.QuadPart);
                 //这是一个文件，名称为：ffd.cFileName，大小为filesize.QuadPart
-                filearray[FileIndex][0] = ffd.cFileName;
-                filearray[FileIndex][1] = L"File";
+                wstring* tmpwstringarray = new wstring[2];
+                tmpwstringarray[0] = ffd.cFileName;
+                tmpwstringarray[1] = L"File";
+                filesVector.push_back(tmpwstringarray);
             }
             FileIndex++;
         }
     } while (FindNextFile(hFind, &ffd) != 0);
-
     dwError = GetLastError();
     if (dwError != ERROR_NO_MORE_FILES)
     {
-        DisplayErrorBox(TEXT("FindFirstFile"));
+        //DisplayErrorBox(TEXT("FindFirstFile"));
     }
     FindClose(hFind);
-    return dwError;
+    return filesVector.size();
 }
+
 std::vector<std::wstring> GetFilesArrayForMultiFilePath(std::vector<std::wstring> pathVector)//标记不同位置的文件及文件夹使用空的元素，空元素的下一个元素即为文件夹位置
 {
     using namespace std;
@@ -173,6 +242,7 @@ std::vector<std::wstring> GetFilesArrayForMultiFilePath(std::vector<std::wstring
         pathVector.push_back(cFilePath);
         SHGetFolderPath(NULL, CSIDL_COMMON_DESKTOPDIRECTORY, 0, 0, cFilePath);
         pathVector.push_back(cFilePath);
+        
     }
     for (wstring path : pathVector)
     {
@@ -194,15 +264,19 @@ std::vector<std::wstring> GetFilesArrayForMultiFilePath(std::vector<std::wstring
             }
         if (path.back() != L'\\' && path.back() != L'/')
             path += L"\\";
-        std::wstring** filesList;
-        intptr_t fileNum = GetFileNum(path, true);
-        GetFilesArray(path, filesList, fileNum);
-        for (intptr_t i = 0; i < fileNum; i++)
+        std::vector<std::wstring*> filesList;
+        GetFilesArray(path, filesList);
+        for (intptr_t i = 0; i < filesList.size(); i++)
         {
             wstring filesListElement = filesList[i][0];
             resultVector.push_back(filesListElement);
+            delete[] filesList[i];
         }
+        //if (filesList != 0)
+        //    delete[] filesList;
     }
+    pathVector.clear();
+    pathVector.shrink_to_fit();
     return resultVector;
 }
 std::vector<intptr_t> GetDirectoryFromFilesVector(std::vector<std::wstring> filesVector)
@@ -211,7 +285,7 @@ std::vector<intptr_t> GetDirectoryFromFilesVector(std::vector<std::wstring> file
     using namespace std;
     vector<intptr_t> resultVec;
     bool mask = false;
-    for (intptr_t i = 0; i < filesVector.size(); i++)
+    for (size_t i = 0; i < filesVector.size(); i++)
     {
         if (mask)
         {

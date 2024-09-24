@@ -96,6 +96,7 @@
     <ClCompile Include="MyFileListItem.cpp" />
     <ClCompile Include="MyFileListWidget.cpp" />
     <ClCompile Include="stringProcess.cpp" />
+    <ClCompile Include="vectorProcess.cpp" />
     <QtRcc Include="DesktopOrganizer.qrc" />
     <QtUic Include="DesktopOrganizer.ui" />
     <QtMoc Include="DesktopOrganizer.h" />
@@ -109,6 +110,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="fileProc.h" />
+    <ClInclude Include="vectorProcess.h" />
     <QtMoc Include="MyFileListWidget.h" />
     <ClInclude Include="stringProcess.h" />
   </ItemGroup>

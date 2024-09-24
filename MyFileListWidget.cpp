@@ -24,19 +24,19 @@
 //My Windows
 #include "fileProc.h"
 //声明&定义
-std::string deletedMaskStr = "<deleted>";
+//std::string deletedMaskStr = "<deleted>";
 #define ICONSIZE 64
-std::wstring j = L"";//需要整理并且放于桌面的路径
-//MyFileListWidget* thisWidget;
+std::wstring desktopPath = L"";//需要整理并且放于桌面的路径
+std::vector<std::wstring> desktopPathVector;//需要整理并且放于桌面的路径的列表（容器）
 
 MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(parent)
 {
-	//thisWidget = this;
+	desktopPathVector.push_back(L"C:\\Users\\lyxyz5223\\Desktop\\md");
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	resizeZero();
 	using namespace std;
-	vector<wstring> filesVector = GetFilesArrayForMultiFilePath(vector<wstring>());
+	vector<wstring> filesVector = GetFilesArrayForMultiFilePath(desktopPathVector);
 	intptr_t fileNum = filesVector.size();
 	vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
 	//intptr_t idCount = 0;
@@ -114,11 +114,13 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 					std::stoll(configContentVector.at(1)),//xIndex
 					std::stoll(configContentVector.at(2))//yIndex
 				};
-				std::string::size_type stOfDeletedCount = configContentVector.at(0).find(deletedMaskStr);
-				if (stOfDeletedCount != std::string::npos)
-				{
-					deletedCount = std::stoll(configContentVector.at(0).substr(stOfDeletedCount + deletedMaskStr.size()));
-				}
+
+				//std::string::size_type stOfDeletedCount = configContentVector.at(0).find(deletedMaskStr);
+				//if (stOfDeletedCount != std::string::npos)
+				//{
+				//	deletedCount = std::stoll(configContentVector.at(0).substr(stOfDeletedCount + deletedMaskStr.size()));
+				//}
+				
 				//configMap[configContentVector.at(0)] = configContentVector.at(1);
 				//index[configContentVector.at(1)] = { std::stoll(configContentVector.at(2)) ,std::stoll(configContentVector.at(3)) };
 			}
@@ -135,8 +137,11 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 	//connect(this, SIGNAL(createItem(std::wstring, std::wstring)), this, SLOT(CreateItem(std::wstring, std::wstring)));
 	for (intptr_t tmpIndex : DirIndexVec)
 	{
-		std::thread threadReadDirectoryChange(&MyFileListWidget::threadReadDirectoryChangesProc,this,filesVector[tmpIndex]);
-		threadReadDirectoryChange.detach();
+		//std::thread threadReadDirectoryChange(&MyFileListWidget::threadReadDirectoryChangesProc,this,filesVector[tmpIndex]);
+		//threadReadDirectoryChange.detach();
+		std::thread threadCheckFilesChange(&MyFileListWidget::threadCheckFilesChange, this);
+		threadCheckFilesChange.detach();
+
 	}
 }
 void MyFileListWidget::initialize()
@@ -159,21 +164,21 @@ void MyFileListWidget::initialize()
 		}
 		else
 		{
-			if (iter->second.filename.find(deletedMaskStr) == std::string::npos)
+			//if (iter->second.filename.find(deletedMaskStr) == std::string::npos)
 				itemsMap.erase(iter++);
-			else
-				iter++;
+			//else
+			//	iter++;
 		}
 	}
 	if (latticeHeight + verticalSpacing != 0)
-		latticeVerticalNum = (height() + verticalSpacing) / (latticeHeight + verticalSpacing);
+		latticeVerticalNum = (height() + verticalSpacing) / (latticeHeight + verticalSpacing);//计算屏幕能容纳的（垂直）个数
 	if (latticeHeight + horizontalSpacing != 0)
-		latticeHorizontalNum = (width() + horizontalSpacing) / (latticeWidth + horizontalSpacing);
+		latticeHorizontalNum = (width() + horizontalSpacing) / (latticeWidth + horizontalSpacing);//计算屏幕能容纳的（水平）个数
 	if (latticeVerticalNum != 0)
 	{
 		latticeHorizontalNum = ((latticeHorizontalNum > ceil(float(itemsMap.size()) / latticeVerticalNum)) ? latticeHorizontalNum : ceil(float(itemsMap.size()) / latticeVerticalNum));
-		lastXindex = ceil(float(itemsMap.size()) / latticeVerticalNum);
-		lastYindex = itemsMap.size() % latticeVerticalNum;
+		//lastXindex = ceil(float(itemsMap.size()) / latticeVerticalNum);
+		//lastYindex = itemsMap.size() % latticeVerticalNum;
 	}
 	for (llong i = 1; i <= latticeVerticalNum; i++, yNext += latticeHeight + verticalSpacing)
 		indexToCoord[i].y = yNext;
@@ -194,13 +199,17 @@ void MyFileListWidget::initialize()
 				rowCount++;
 			}
 			iter->second.item->move(indexToCoord[iter->second.xIndex].x, indexToCoord[iter->second.yIndex].y);
+			latticeJudge[std::pair<llong, llong>(iter->second.xIndex, iter->second.yIndex)] = true;
 		}
 	}
 	else {
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		{
-			if(iter->second.item != 0)
+			if (iter->second.item != 0)
+			{
 				iter->second.item->move(indexToCoord[iter->second.xIndex].x, indexToCoord[iter->second.yIndex].y);
+				latticeJudge[std::pair<llong, llong>(iter->second.xIndex, iter->second.yIndex)] = true;
+			}
 		}
 	}
 
@@ -334,22 +343,47 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 	namewithpath += name;
 	if (!(itemsMap.count(wstr2str_2UTF8(namewithpath)) > 0))
 	{
-		if (deletedCount > 0)
+		//if (deletedCount > 0)
+		//{
+		//	llong tmpDeletedCount = deletedCount--;
+		//	itemsMap[(wstr2str_2UTF8(namewithpath))] = itemsMap[deletedMaskStr + std::to_string(tmpDeletedCount)];
+		//	itemsMap.erase(deletedMaskStr + std::to_string(tmpDeletedCount));
+		//}
+		//else
+		//{
+		llong i_x = 1;
+		llong i_y = 1;
+		for (; i_x <= latticeHorizontalNum+1;)
 		{
-			llong tmpDeletedCount = deletedCount--;
-			itemsMap[(wstr2str_2UTF8(namewithpath))] = itemsMap[deletedMaskStr + std::to_string(tmpDeletedCount)];
-			itemsMap.erase(deletedMaskStr + std::to_string(tmpDeletedCount));
+			if (latticeJudge.count(std::pair<llong, llong>(i_x, i_y)))
+			{
+				if (!latticeJudge[std::pair<llong, llong>(i_x, i_y)])
+				{
+					break;
+				}
+			}
+			else
+			{
+				//下一个位置
+				break;
+			}
+			++i_y;
+			if (i_y > latticeVerticalNum)
+			{
+				++i_x;
+				i_y = 1;
+			}
 		}
-		else
-		{
 			itemsMap[(wstr2str_2UTF8(namewithpath))] = {
 				itemsMap[(wstr2str_2UTF8(namewithpath))].item,
 				wstr2str_2UTF8(name),
-				(lastYindex < latticeVerticalNum ? lastXindex : lastXindex + 1),
-				(lastYindex < latticeVerticalNum ? lastYindex + 1 : 1),
+				i_x,
+				i_y
+				//(lastYindex < latticeVerticalNum ? lastXindex : lastXindex + 1),
+				//(lastYindex < latticeVerticalNum ? lastYindex + 1 : 1),
 			};
-		}
-		SHFILEINFO sfi = { 0 };
+		//}
+		SHFILEINFO sfi;
 		DWORD_PTR dw_ptr = SHGetFileInfo(namewithpath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
 		QIcon desktopItemIcon;
 		if (dw_ptr)
@@ -360,8 +394,8 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 		pLWItem->adjustSize();
 		pLWItem->setMyIconSize(ICONSIZE);
 		pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
-		addItem(pLWItem/*, std::to_string(itemsMapElement1.id)*/, wstr2str_2UTF8(namewithpath));
-		pLWItem->move(indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].xIndex].x, indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].yIndex].y);
+		addItem(pLWItem, wstr2str_2UTF8(namewithpath));
+		//pLWItem->move(indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].xIndex].x, indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].yIndex].y);
 		connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(namewithpath); });
 		connect(pLWItem, &MyFileListItem::deleteItem, this, [=]() {DeleteItem(pLWItem->text().toStdWString(), pLWItem->getPath()); });
 		pLWItem->show();
@@ -375,19 +409,22 @@ void MyFileListWidget::DeleteItem(std::wstring name, std::wstring path)
 	namewithpath += name;
 	if (itemsMap.count(wstr2str_2UTF8(namewithpath)) > 0)
 	{
-		++deletedCount;
-		std::string tmpstr = deletedMaskStr + std::to_string(deletedCount);
-
-		itemsMap[wstr2str_2UTF8(namewithpath)].item->hide();
-		disconnect(itemsMap[wstr2str_2UTF8(namewithpath)].item);
-		destroyed(itemsMap[wstr2str_2UTF8(namewithpath)].item);
-
-		itemsMap[wstr2str_2UTF8(namewithpath)].item = 0;
-		itemsMap[wstr2str_2UTF8(namewithpath)].filename = tmpstr;
-		itemsMap[tmpstr] = itemsMap[wstr2str_2UTF8(namewithpath)];//可以是/:\*?|"<>这几个符号
+		//++deletedCount;
+		//std::string tmpstr = deletedMaskStr + std::to_string(deletedCount);
+		if (itemsMap[wstr2str_2UTF8(namewithpath)].item != 0)
+		{
+			itemsMap[wstr2str_2UTF8(namewithpath)].item->hide();
+			disconnect(itemsMap[wstr2str_2UTF8(namewithpath)].item);
+			destroyed(itemsMap[wstr2str_2UTF8(namewithpath)].item);
+		}
+		//itemsMap[wstr2str_2UTF8(namewithpath)].item = 0;
+		//itemsMap[wstr2str_2UTF8(namewithpath)].filename = tmpstr;
+		//itemsMap[tmpstr] = itemsMap[wstr2str_2UTF8(namewithpath)];//可以是/:\*?|"<>这几个符号
 		//itemsMap[tmpstr].item = 0;
+		latticeJudge[std::pair<llong, llong>(itemsMap[wstr2str_2UTF8(namewithpath)].xIndex, itemsMap[wstr2str_2UTF8(namewithpath)].yIndex)] = false;
 		itemsMap.erase(wstr2str_2UTF8(namewithpath));
 		//itemsMap[wstr2str_2UTF8(namewithpath)].item->deleteLater();
+
 	}
 
 }
@@ -412,4 +449,57 @@ void MyFileListWidget::desktopItemProc(std::wstring nameWithPath)
 {
 	std::cout << UTF8ToANSI(wstr2str_2UTF8(nameWithPath)).c_str() << std::endl;
 	ShellExecute(0, L"open", nameWithPath.c_str(), L"", 0, SW_NORMAL);
+}
+
+void MyFileListWidget::threadCheckFilesChange()
+{
+	while (true)
+	{
+		using namespace std;
+		vector<wstring> filesVector = GetFilesArrayForMultiFilePath(desktopPathVector);
+		intptr_t fileNum = filesVector.size();
+		vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
+		//intptr_t idCount = 0;
+		intptr_t dirIndex = -1;
+		for (intptr_t i = 0; i < fileNum; i++)
+		{
+			bool THIS_IS_NOT_A_FILE_OR_DIRECTORY = false;
+			for (intptr_t tmpIndex : DirIndexVec)
+			{
+				if (i == tmpIndex)
+				{
+					dirIndex = i;
+					THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
+					break;
+				}
+				else if (i == (tmpIndex - 1))
+					THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
+			}
+			if ((!THIS_IS_NOT_A_FILE_OR_DIRECTORY) && (dirIndex != -1))
+			{
+				wstring fileNameWithPath = (filesVector[dirIndex] + L"\\" + filesVector[i]);
+				if (!itemsMap.count(wstr2str_2UTF8(fileNameWithPath)))
+				{
+					SendCreateItemSignal(filesVector[i], filesVector[dirIndex]);
+				}
+			}
+		}
+		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+		{
+			//vector<wstring> filesVector = GetFilesArrayForMultiFilePath(desktopPathVector);
+			//intptr_t fileNum = filesVector.size();
+			//vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
+			if (iter->second.item != 0)
+			{
+				wstring nameWithNoPath = iter->second.item->text().toStdWString();
+				if (std::find(filesVector.begin(), filesVector.end(), nameWithNoPath) == filesVector.end())
+				{
+					//Can't find it!
+					//So delete it!
+					SendDeleteItemSignal(nameWithNoPath, iter->second.item->getPath());
+				}
+			}
+		}
+		//Sleep(100);
+	}
 }
