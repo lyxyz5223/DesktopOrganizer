@@ -65,11 +65,11 @@ public:
 	{
 		emit deleteItem(name,path);
 	}
-signals:
+signals://信号
 	void createItem(std::wstring, std::wstring);
 	void deleteItem(std::wstring, std::wstring);
 
-public slots:
+public slots://槽
 	void desktopItemProc(std::wstring nameWithPath);
 	void CreateItem(std::wstring name, std::wstring path);
 	void DeleteItem(std::wstring name, std::wstring path);

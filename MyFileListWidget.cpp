@@ -31,7 +31,7 @@ std::vector<std::wstring> desktopPathVector;//需要整理并且放于桌面的�
 
 MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(parent)
 {
-	desktopPathVector.push_back(L"C:\\Users\\lyxyz5223\\Desktop\\md");
+	//desktopPathVector.push_back(L"C:\\Users\\lyxyz5223\\Desktop\\md");
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	resizeZero();
@@ -421,12 +421,15 @@ void MyFileListWidget::DeleteItem(std::wstring name, std::wstring path)
 		//itemsMap[wstr2str_2UTF8(namewithpath)].filename = tmpstr;
 		//itemsMap[tmpstr] = itemsMap[wstr2str_2UTF8(namewithpath)];//可以是/:\*?|"<>这几个符号
 		//itemsMap[tmpstr].item = 0;
+
+		////important!!!!!!!!!!!!
 		latticeJudge[std::pair<llong, llong>(itemsMap[wstr2str_2UTF8(namewithpath)].xIndex, itemsMap[wstr2str_2UTF8(namewithpath)].yIndex)] = false;
 		itemsMap.erase(wstr2str_2UTF8(namewithpath));
+		////
+		
 		//itemsMap[wstr2str_2UTF8(namewithpath)].item->deleteLater();
 
 	}
-
 }
 
 bool MyFileListWidget::writeConfig(std::map<std::string/*id*/, ItemProp> config_map, std::string 分隔符)
@@ -484,11 +487,9 @@ void MyFileListWidget::threadCheckFilesChange()
 				}
 			}
 		}
-		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+		map<wstring/*nameWithNoPath*/, wstring/*path*/>toBeDelete;
+		for (auto iter = itemsMap.begin(); iter != itemsMap.end();iter++)
 		{
-			//vector<wstring> filesVector = GetFilesArrayForMultiFilePath(desktopPathVector);
-			//intptr_t fileNum = filesVector.size();
-			//vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
 			if (iter->second.item != 0)
 			{
 				wstring nameWithNoPath = iter->second.item->text().toStdWString();
@@ -496,9 +497,14 @@ void MyFileListWidget::threadCheckFilesChange()
 				{
 					//Can't find it!
 					//So delete it!
-					SendDeleteItemSignal(nameWithNoPath, iter->second.item->getPath());
+					//SendDeleteItemSignal(nameWithNoPath, iter->second.item->getPath());
+					toBeDelete[nameWithNoPath] = iter->second.item->getPath();
 				}
 			}
+		}
+		for (auto iter = toBeDelete.begin(); iter != toBeDelete.end(); iter++)
+		{
+			SendDeleteItemSignal(iter->first, iter->second);
 		}
 		//Sleep(100);
 	}

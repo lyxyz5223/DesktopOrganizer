@@ -274,6 +274,8 @@ std::vector<std::wstring> GetFilesArrayForMultiFilePath(std::vector<std::wstring
         }
         //if (filesList != 0)
         //    delete[] filesList;
+        filesList.clear();
+        filesList.shrink_to_fit();
     }
     pathVector.clear();
     pathVector.shrink_to_fit();
