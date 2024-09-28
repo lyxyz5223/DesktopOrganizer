@@ -43,9 +43,10 @@ public:
 		llong x;
 		llong y;
 	};
-
-	llong horizontalSpacing = 10;//桌面图标水平间距
-	llong verticalSpacing = 10;//桌面图标垂直间距
+	llong horizontalSpacing = 20;//桌面图标水平间距
+	llong verticalSpacing = 15;//桌面图标垂直间距
+	llong firstVerticalSpacing = verticalSpacing;
+	llong firstHorizontalSpacing = horizontalSpacing;
 	llong latticeWidth = 0, //桌面图标宽度
 		latticeHeight = 0,//桌面图标高度
 		latticeVerticalNum = 0,//桌面图标垂直数量
@@ -75,6 +76,7 @@ public slots://槽
 	void DeleteItem(std::wstring name, std::wstring path);
 
 private:
+	bool delete_ing = false;
 	std::string strConfig = "";
 	std::string configFileName = "config.ini";
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;

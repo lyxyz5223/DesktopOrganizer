@@ -30,7 +30,7 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 	p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);//抗锯齿
 	qreal xr, yr;
 	xr = yr = (size().width() > size().height() ? size().height() / 5 : size().width() / 5);
-	p.setBrush(QBrush(QColor(100, 100, 119, 255)));
+	p.setBrush(QBrush(QColor(100, 100, 119, 100)));
 	p.setPen(Qt::NoPen);
 	QRect qrect1;
 	qrect1 = this->rect();
@@ -38,6 +38,10 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 	//qrect1.setHeight(qrect1.height() - 1);
 	p.drawRoundedRect(qrect1, xr, yr, Qt::SizeMode::AbsoluteSize);
 	QString Qtext = text();
+	if (Qtext.right(4) == ".lnk" || Qtext.right(4) == ".url")
+	{
+		Qtext = Qtext.left(Qtext.size()-4);
+	}
 	QTextOption qto;
 	if (viewMode == ViewMode::Icon)
 	{
@@ -168,7 +172,9 @@ void MyFileListItem::MenuClickedProc(QAction* action)
 	}
 	else if (action->text() == "删除")
 	{
-		emit deleteItem();
+		//emit deleteItem();
+		//MessageBox(0, (getPath() + L"\\" + text().toStdWString()).c_str(), 0, 0);
+		_wremove((getPath() + L"\\" + text().toStdWString()).c_str());
 	}
 }
 void MyFileListItem::desktopItemProc(std::wstring name,std::wstring desktopPath)

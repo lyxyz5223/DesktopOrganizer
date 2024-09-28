@@ -36,50 +36,6 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	resizeZero();
 	using namespace std;
-	vector<wstring> filesVector = GetFilesArrayForMultiFilePath(desktopPathVector);
-	intptr_t fileNum = filesVector.size();
-	vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
-	//intptr_t idCount = 0;
-		intptr_t dirIndex = -1;
-	for (intptr_t i = 0; i < fileNum; i++)
-	{
-		MyFileListItem* pLWItem = new MyFileListItem();
-
-		// Get the icon image associated with the item
-		SHFILEINFO sfi;
-		bool THIS_IS_NOT_A_FILE_OR_DIRECTORY = false;
-		for (intptr_t tmpIndex : DirIndexVec)
-		{
-			if (i == tmpIndex)
-			{
-				dirIndex = i;
-				THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
-				break;
-			}
-			else if (i == (tmpIndex - 1))
-				THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
-		}
-		if ((!THIS_IS_NOT_A_FILE_OR_DIRECTORY) && (dirIndex != -1))
-		{
-			wstring fileNameWithPath = (filesVector[dirIndex] + L"\\" + filesVector[i]);
-			DWORD_PTR dw_ptr = SHGetFileInfo(fileNameWithPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
-			QIcon desktopItemIcon;
-			if (dw_ptr)
-				desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
-			//pLWItem->setIcon(QIcon(desktopItemIcon));
-			pLWItem->setText(wstr2str_2UTF8(filesVector[i]).c_str());
-			pLWItem->setPath(filesVector[dirIndex]);
-			pLWItem->adjustSize();
-			pLWItem->setMyIconSize(ICONSIZE);
-			pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
-			this->addItem(pLWItem/*, std::to_string(idCount)*/, wstr2str_2UTF8(fileNameWithPath));
-			//idCount++;
-			connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(fileNameWithPath); });
-			connect(pLWItem, &MyFileListItem::deleteItem, this, [=]() {DeleteItem(pLWItem->text().toStdWString(),pLWItem->getPath()); });
-		}
-
-	}
-
 	fstream fConfig(configFileName, ios::app|ios::out);
 	if (fConfig.is_open())
 	{
@@ -102,27 +58,15 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 				vector<string> configContentVector = split(strTmp,"\t");
 				if (configContentVector.size() < 3)
 				{
-					assert(false && "configContentVector.size()<3");
+					assert(false && "configContentVector.size() < 3");
 					exit(999);
 				}
-				//itemsMap[configContentVector.at(1)].filename = configContentVector.at(0);
-				//itemsMap[configContentVector.at(1)].id = std::stoll(configContentVector.at(1));
 				itemsMap[configContentVector.at(0)] = {
 					itemsMap[configContentVector.at(0)].item,//MyFileListItem* item
 					configContentVector.at(0),//filename
-					//std::stoll(configContentVector.at(1)),//id
 					std::stoll(configContentVector.at(1)),//xIndex
 					std::stoll(configContentVector.at(2))//yIndex
 				};
-
-				//std::string::size_type stOfDeletedCount = configContentVector.at(0).find(deletedMaskStr);
-				//if (stOfDeletedCount != std::string::npos)
-				//{
-				//	deletedCount = std::stoll(configContentVector.at(0).substr(stOfDeletedCount + deletedMaskStr.size()));
-				//}
-				
-				//configMap[configContentVector.at(0)] = configContentVector.at(1);
-				//index[configContentVector.at(1)] = { std::stoll(configContentVector.at(2)) ,std::stoll(configContentVector.at(3)) };
 			}
 			strConfig.erase(strConfig.end()-1);
 			fileNULL:
@@ -131,25 +75,17 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 		}
 	}
 	fConfig.close();
-	initialize();
+	//initialize();
 	connect(this, &MyFileListWidget::createItem, this, &MyFileListWidget::CreateItem);
 	connect(this, &MyFileListWidget::deleteItem, this, &MyFileListWidget::DeleteItem);
 	//connect(this, SIGNAL(createItem(std::wstring, std::wstring)), this, SLOT(CreateItem(std::wstring, std::wstring)));
-	for (intptr_t tmpIndex : DirIndexVec)
-	{
-		//std::thread threadReadDirectoryChange(&MyFileListWidget::threadReadDirectoryChangesProc,this,filesVector[tmpIndex]);
-		//threadReadDirectoryChange.detach();
-		std::thread threadCheckFilesChange(&MyFileListWidget::threadCheckFilesChange, this);
-		threadCheckFilesChange.detach();
-
-	}
+	std::thread threadCheckFilesChange(&MyFileListWidget::threadCheckFilesChange, this);
+	threadCheckFilesChange.detach();
 }
 void MyFileListWidget::initialize()
 {
-	llong 初始的y坐标 = 0,
-		初始的x坐标 = 0;//可以改
-	llong yNext = 初始的y坐标,
-		xNext = 初始的x坐标,
+	llong yNext = firstVerticalSpacing,
+		xNext = firstHorizontalSpacing,
 		rowCount = 1,
 		lineCount = 1;
 	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); )
@@ -212,7 +148,7 @@ void MyFileListWidget::initialize()
 			}
 		}
 	}
-
+	writeConfig(itemsMap);
 }
 
 void MyFileListWidget::threadReadDirectoryChangesProc(std::wstring path)
@@ -318,7 +254,6 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
 	p.fillRect(rect(), QColor(255, 255, 255, 0));
-	writeConfig(itemsMap);
 	QWidget::paintEvent(e);
 }
 /*
@@ -343,14 +278,6 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 	namewithpath += name;
 	if (!(itemsMap.count(wstr2str_2UTF8(namewithpath)) > 0))
 	{
-		//if (deletedCount > 0)
-		//{
-		//	llong tmpDeletedCount = deletedCount--;
-		//	itemsMap[(wstr2str_2UTF8(namewithpath))] = itemsMap[deletedMaskStr + std::to_string(tmpDeletedCount)];
-		//	itemsMap.erase(deletedMaskStr + std::to_string(tmpDeletedCount));
-		//}
-		//else
-		//{
 		llong i_x = 1;
 		llong i_y = 1;
 		for (; i_x <= latticeHorizontalNum+1;)
@@ -379,10 +306,7 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 				wstr2str_2UTF8(name),
 				i_x,
 				i_y
-				//(lastYindex < latticeVerticalNum ? lastXindex : lastXindex + 1),
-				//(lastYindex < latticeVerticalNum ? lastYindex + 1 : 1),
 			};
-		//}
 		SHFILEINFO sfi;
 		DWORD_PTR dw_ptr = SHGetFileInfo(namewithpath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
 		QIcon desktopItemIcon;
@@ -405,6 +329,7 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 
 void MyFileListWidget::DeleteItem(std::wstring name, std::wstring path)
 {
+	delete_ing = true;
 	std::wstring namewithpath = path + L"\\";
 	namewithpath += name;
 	if (itemsMap.count(wstr2str_2UTF8(namewithpath)) > 0)
@@ -430,6 +355,7 @@ void MyFileListWidget::DeleteItem(std::wstring name, std::wstring path)
 		//itemsMap[wstr2str_2UTF8(namewithpath)].item->deleteLater();
 
 	}
+	delete_ing = false;
 }
 
 bool MyFileListWidget::writeConfig(std::map<std::string/*id*/, ItemProp> config_map, std::string 分隔符)
@@ -460,33 +386,6 @@ void MyFileListWidget::threadCheckFilesChange()
 	{
 		using namespace std;
 		vector<wstring> filesVector = GetFilesArrayForMultiFilePath(desktopPathVector);
-		intptr_t fileNum = filesVector.size();
-		vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
-		//intptr_t idCount = 0;
-		intptr_t dirIndex = -1;
-		for (intptr_t i = 0; i < fileNum; i++)
-		{
-			bool THIS_IS_NOT_A_FILE_OR_DIRECTORY = false;
-			for (intptr_t tmpIndex : DirIndexVec)
-			{
-				if (i == tmpIndex)
-				{
-					dirIndex = i;
-					THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
-					break;
-				}
-				else if (i == (tmpIndex - 1))
-					THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
-			}
-			if ((!THIS_IS_NOT_A_FILE_OR_DIRECTORY) && (dirIndex != -1))
-			{
-				wstring fileNameWithPath = (filesVector[dirIndex] + L"\\" + filesVector[i]);
-				if (!itemsMap.count(wstr2str_2UTF8(fileNameWithPath)))
-				{
-					SendCreateItemSignal(filesVector[i], filesVector[dirIndex]);
-				}
-			}
-		}
 		map<wstring/*nameWithNoPath*/, wstring/*path*/>toBeDelete;
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end();iter++)
 		{
@@ -506,6 +405,37 @@ void MyFileListWidget::threadCheckFilesChange()
 		{
 			SendDeleteItemSignal(iter->first, iter->second);
 		}
-		//Sleep(100);
+		if (!delete_ing)
+		{
+
+			intptr_t fileNum = filesVector.size();
+			vector<intptr_t> DirIndexVec = GetDirectoryFromFilesVector(filesVector);
+			//intptr_t idCount = 0;
+			intptr_t dirIndex = -1;
+			for (intptr_t i = 0; i < fileNum; i++)
+			{
+				bool THIS_IS_NOT_A_FILE_OR_DIRECTORY = false;
+				for (intptr_t tmpIndex : DirIndexVec)
+				{
+					if (i == tmpIndex)
+					{
+						dirIndex = i;
+						THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
+						break;
+					}
+					else if (i == (tmpIndex - 1))
+						THIS_IS_NOT_A_FILE_OR_DIRECTORY = true;
+				}
+				if ((!THIS_IS_NOT_A_FILE_OR_DIRECTORY) && (dirIndex != -1))
+				{
+					wstring fileNameWithPath = (filesVector[dirIndex] + L"\\" + filesVector[i]);
+					if (!itemsMap.count(wstr2str_2UTF8(fileNameWithPath)))
+					{
+						SendCreateItemSignal(filesVector[i], filesVector[dirIndex]);
+					}
+				}
+			}
+		}
+		Sleep(100);
 	}
 }
