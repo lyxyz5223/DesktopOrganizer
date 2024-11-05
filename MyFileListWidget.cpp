@@ -38,7 +38,7 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 		desktopPathVector.push_back(path.toStdWString());
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
-	//SetParent((HWND)winId(), (HWND)parent->winId());
+	SetParent((HWND)winId(), (HWND)parent->winId());
 	resizeZero();
 	using namespace std;
 	fstream fConfig(configFileName, ios::app|ios::out);

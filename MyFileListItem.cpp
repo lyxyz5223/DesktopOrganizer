@@ -209,7 +209,27 @@ void MyFileListItem::MenuClickedProc(QAction* action)
 	{
 		//emit deleteItem();
 		//MessageBox(0, (getPath() + L"\\" + text().toStdWString()).c_str(), 0, 0);
-		_wremove((getPath() + L"\\" + text().toStdWString()).c_str());
+		std::wstring nameWithPath = getPath() + L"\\" + text().toStdWString();
+		WCHAR* CNameWithPath = new WCHAR[nameWithPath.size()+2];
+		for (size_t i = 0; i < nameWithPath.size(); i++)
+			CNameWithPath[i] = nameWithPath[i];
+		CNameWithPath[nameWithPath.size()] = L'\0';
+		CNameWithPath[nameWithPath.size() + 1] = L'\0';
+		SHFILEOPSTRUCT fileOpStruct;
+		ZeroMemory(&fileOpStruct, sizeof(fileOpStruct));
+		fileOpStruct.fFlags = FOF_ALLOWUNDO;
+		fileOpStruct.wFunc = FO_DELETE;
+		fileOpStruct.pFrom = CNameWithPath;
+		int fileOpResult = SHFileOperation(&fileOpStruct);
+		std::wcout << L"用户删除：" << fileOpStruct.pFrom << std::endl;
+		if (fileOpResult)
+		{
+			std::wcout << L"删除失败！删除文件：" << fileOpStruct.pFrom << L"时出现问题，错误代码：" << fileOpResult << std::endl;
+			MessageBox(0, (L"删除失败！\n删除" + std::wstring() + fileOpStruct.pFrom + std::wstring() + L"时出现问题，\n错误代码：" + std::to_wstring(fileOpResult)).c_str(), L"error", 0);
+		}
+		//MessageBox(0, fileOpStruct.pFrom, (L"函数返回："+std::to_wstring(fileOpResult)).c_str(), 0);
+		delete[] CNameWithPath;
+		//_wremove((getPath() + L"\\" + text().toStdWString()).c_str());
 	}
 }
 void MyFileListItem::desktopItemProc(std::wstring name,std::wstring desktopPath)

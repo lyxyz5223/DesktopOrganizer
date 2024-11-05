@@ -28,7 +28,6 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     //Sleep(3000);
     //ShowWindow(HWND_SHELLDLL_DefView, SW_NORMAL);
     //PostMessage(HWND_SHELLDLL_DefView, WM_CLOSE, 0, 0);
-    
     SetParent(HWND_thisApp, HWND_WorkerW);
     setAttribute(Qt::WA_TranslucentBackground, true);
     SetWindowLong(HWND_thisApp, GWL_EXSTYLE, GetWindowLong(HWND_thisApp, GWL_EXSTYLE) | WS_EX_TOOLWINDOW);
@@ -87,11 +86,11 @@ void DesktopOrganizer::paintEvent(QPaintEvent* e)
     QPainter p(this);
     //p.fillRect(rect(), QColor(100, 55, 255, 0));
     //p.fillRect(rect(), QColor(255, 255, 255, 0));
-    QPen pen;
-    pen.setColor(QColor(110, 110, 119, 255));
-    pen.setWidth(5);
-    p.setPen(pen);
-    p.drawRect(rect());
+    //QPen pen;
+    //pen.setColor(QColor(110, 110, 119, 255));
+    //pen.setWidth(5);
+    //p.setPen(pen);
+    //p.drawRect(rect());
     QMainWindow::paintEvent(e);
 }
 

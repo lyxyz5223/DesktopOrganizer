@@ -64,7 +64,7 @@ private:
 	QSize itemTextSize;
 	std::wstring MyPath;
 	//paint
-	QBrush bgBrush_Default = QColor(0,0,0,1);//background,alphaΪ1��ֹ��괩͸
+	QBrush bgBrush_Default = QColor(0,0,0,1);//background,alpha=1防止鼠标穿透
 	QBrush bgBrush_MouseMove = QColor(255, 255, 255, 75);//background
 	QBrush bgBrush_Selected = QColor(255, 255, 255, 125);//background
 	QBrush bgBrush = bgBrush_Default;//background
