@@ -18,6 +18,8 @@ MyFileListItem::MyFileListItem(QWidget* parent) : QPushButton(parent)
 {
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setWindowFlags(Qt::FramelessWindowHint);
+	setMouseTracking(true);
+	installEventFilter(this);
 	//itemTextSize.setHeight(25);
 	resize(0, 0);
 }
@@ -26,16 +28,16 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
 	QPen pen;
-	//p.fillRect(this->rect(), QColor(255, 255, 255, 0));
 	p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);//抗锯齿
 	qreal xr, yr;
 	xr = yr = (size().width() > size().height() ? size().height() / 5 : size().width() / 5);
-	p.setBrush(QBrush(QColor(100, 100, 119, 100)));
-	p.setPen(Qt::NoPen);
 	QRect qrect1;
 	qrect1 = this->rect();
 	//qrect1.setWidth(qrect1.width() - 1);
 	//qrect1.setHeight(qrect1.height() - 1);
+	p.setPen(Qt::NoPen);
+	p.setBrush(bgBrush);
+	//p.setBrush(QBrush(QColor(100, 100, 119, 100)));
 	p.drawRoundedRect(qrect1, xr, yr, Qt::SizeMode::AbsoluteSize);
 	QString Qtext = text();
 	if (Qtext.right(4) == ".lnk" || Qtext.right(4) == ".url")
@@ -48,9 +50,20 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 		qto.setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
 		pen.setColor(QColor(0, 0, 0,100));
 		p.setPen(pen);
-		double 缩放 = 3.0 / 4;
-		p.drawRect(QRect((width() - width() * 缩放) / 2, (width() - width() * 缩放) / 2, size().width() * 缩放, size().width() * 缩放));
-		p.drawImage(QRect((width() - width()* 缩放) / 2, (width() - width()* 缩放) / 2, size().width() * 缩放, size().width() * 缩放), itemImage);
+		double zoom = 3.0 / 4;//缩放
+		QRect imageRect((width() - width() * zoom) / 2,
+			(width() - width() * zoom) / 2,
+			width() * zoom,
+			width() * zoom);
+		//p.drawRect(imageRect);//正方形边框
+		if (itemImage.width() >= itemImage.height())
+			imageRect.setSize(QSize(width() * zoom, width() * zoom * itemImage.height() / itemImage.width()));
+		else
+			imageRect.setSize(QSize(width() * zoom * itemImage.width() / itemImage.height(), width() * zoom));
+		imageRect.setRect((width() - imageRect.width()) / 2,
+			(width() + width() * zoom) / 2 - imageRect.height(),
+			imageRect.width(),imageRect.height());
+		p.drawImage(imageRect, itemImage);
 		Qtext = elidedMultiLinesText(this, Qtext, 2, Qt::ElideRight);
 		QFontMetrics fontMetrics1(font());
 		int fontHeight = fontMetrics1.size(0, Qtext).height();
@@ -60,8 +73,7 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 		qrect1 = rect();
 	}
 	else
-	{
-		
+	{		
 		qto.setAlignment(Qt::AlignHCenter | Qt::AlignLeft);
 		qrect1.setX(MyIconSize);
 		qrect1.setWidth(size().width() - iconSize().width());
@@ -76,6 +88,15 @@ void MyFileListItem::mouseDoubleClickEvent(QMouseEvent* e)
 {
 	//MessageBox(0, L"DoubleClicked!!!", L"", 0);
 	emit doubleClicked();
+}
+
+bool MyFileListItem::eventFilter(QObject* watched, QEvent* event)
+{
+	if (event->type() == QEvent::Enter)
+		bgBrush = bgBrush_MouseMove;
+	else if (event->type() == QEvent::Leave && !isSelected)
+		bgBrush = bgBrush_Default;
+	return false;
 }
 
 void MyFileListItem::setViewMode(ViewMode View_Mode)
@@ -115,9 +136,7 @@ QString elidedMultiLinesText(QWidget* widget,QString text, int lines, Qt::TextEl
 				strList.append(text.left(i - 1));
 				text = text.right(text.size() - i + 1);
 				if (strList.size() == lines)
-				{
 					break;
-				}
 				i = 0;
 			}
 		}
@@ -159,14 +178,30 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 		menu1->exec(QCursor::pos());
 		break;
 	}
+	case Qt::MouseButton::LeftButton:
+		bgBrush = bgBrush_Selected;
+		isSelected = true;
+		emit selected();
+		update();
+		break;
 	default:
 		break;
-
 	}
 }
+void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
+{
+	switch (e->button())
+	{
+	case Qt::MouseButton::LeftButton:
+		break;
+	default:
+		break;
+	}
+}
+
 void MyFileListItem::MenuClickedProc(QAction* action)
 {
-	if (action->text() == "打开")
+	if (action->text() == "打开")       
 	{
 		emit doubleClicked();
 	}

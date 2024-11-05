@@ -27,15 +27,31 @@ public:
 	{
 		return MyPath;
 	}
-
+	void setSelected(bool b) {
+		if (b)
+		{
+			bgBrush = bgBrush_Selected;
+			isSelected = true;
+		}
+		else
+		{
+			bgBrush = bgBrush_Default;
+			isSelected = false;
+		}
+		update();
+	}
 protected:
-	void mousePressEvent(QMouseEvent* e);
-	void paintEvent(QPaintEvent* e);
-	void mouseDoubleClickEvent(QMouseEvent* e);
+	void mousePressEvent(QMouseEvent* e) override;
+	void mouseReleaseEvent(QMouseEvent* e) override;
+	//void mouseMoveEvent(QMouseEvent* e) override;
+	void paintEvent(QPaintEvent* e) override;
+	void mouseDoubleClickEvent(QMouseEvent* e) override;
+	bool eventFilter(QObject* watched, QEvent* event) override;
 
 signals:
 	void doubleClicked();
 	void deleteItem();
+	void selected();
 
 public slots:
 	void MenuClickedProc(QAction* action);
@@ -47,5 +63,11 @@ private:
 	QIcon itemIcon = icon();
 	QSize itemTextSize;
 	std::wstring MyPath;
+	//paint
+	QBrush bgBrush_Default = QColor(0,0,0,0);//background
+	QBrush bgBrush_MouseMove = QColor(255, 255, 255, 75);//background
+	QBrush bgBrush_Selected = QColor(255, 255, 255, 125);//background
+	QBrush bgBrush = bgBrush_Default;//background
+	bool isSelected = false;
 };
 

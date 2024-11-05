@@ -28,8 +28,8 @@ public:
 	void setConfigFileName(std::string File_Name){
 		configFileName = File_Name;
 	}
-	void threadReadDirectoryChangesProc(std::wstring path);
-	void threadCheckFilesChange();
+	//void threadReadDirectoryChangesProc(std::wstring path);
+	void checkFilesChangeProc(std::vector<std::wstring> pathVector);
 
 	typedef long long llong;
 	struct ItemProp {
@@ -81,7 +81,8 @@ private:
 	std::string configFileName = "config.ini";
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
 	std::map<llong/*x或者y索引*/, lPoint> indexToCoord;//index索引与坐标
-
+	std::vector<std::wstring> desktopPathVector;//需要整理并且放于桌面的路径的列表（容器）
+	MyFileListItem* selectedItem;//选中的图标
 	//std::unordered_map<std::string/*name*/, std::string/*id*/> configMap;//图标名字与id的绑定
 	//std::map<std::string, MyFileListItem*> itemsMap;//id与物体的绑定
 	//std::map<std::string, llong> Xindex;//id与X索引

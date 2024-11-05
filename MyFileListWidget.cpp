@@ -1,4 +1,13 @@
 //有关id的内容觉得没用，于是全都删掉了
+//Windows
+#include <Windows.h>
+#include <ShlObj.h>
+#include <Shlwapi.h>
+#pragma comment(lib,"Shlwapi.lib")
+#include <thumbcache.h>
+#include <atlbase.h>
+#include <atlcore.h>
+#include <atlcom.h>
 
 //Qt
 #include "MyFileListWidget.h"
@@ -16,24 +25,20 @@
 #include <cstdlib>
 #include <thread>
 
-//Windows
-#include <Windows.h>
-#include <ShlObj.h>
-#include <Shlwapi.h>
-#pragma comment(lib,"Shlwapi.lib")
 //My Windows
 #include "fileProc.h"
 //声明&定义
 //std::string deletedMaskStr = "<deleted>";
 #define ICONSIZE 64
-std::wstring desktopPath = L"";//需要整理并且放于桌面的路径
-std::vector<std::wstring> desktopPathVector;//需要整理并且放于桌面的路径的列表（容器）
 
 MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(parent)
 {
 	//desktopPathVector.push_back(L"C:\\Users\\lyxyz5223\\Desktop\\md");
+	if(!path.isEmpty())
+		desktopPathVector.push_back(path.toStdWString());
 	setWindowFlags(Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_TranslucentBackground, true);
+	//SetParent((HWND)winId(), (HWND)parent->winId());
 	resizeZero();
 	using namespace std;
 	fstream fConfig(configFileName, ios::app|ios::out);
@@ -79,7 +84,7 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,QString path)// : QWidget(par
 	connect(this, &MyFileListWidget::createItem, this, &MyFileListWidget::CreateItem);
 	connect(this, &MyFileListWidget::deleteItem, this, &MyFileListWidget::DeleteItem);
 	//connect(this, SIGNAL(createItem(std::wstring, std::wstring)), this, SLOT(CreateItem(std::wstring, std::wstring)));
-	std::thread threadCheckFilesChange(&MyFileListWidget::threadCheckFilesChange, this);
+	std::thread threadCheckFilesChange(&MyFileListWidget::checkFilesChangeProc, this, desktopPathVector);
 	threadCheckFilesChange.detach();
 }
 void MyFileListWidget::initialize()
@@ -99,23 +104,14 @@ void MyFileListWidget::initialize()
 			iter++;
 		}
 		else
-		{
-			//if (iter->second.filename.find(deletedMaskStr) == std::string::npos)
-				itemsMap.erase(iter++);
-			//else
-			//	iter++;
-		}
+			itemsMap.erase(iter++);
 	}
 	if (latticeHeight + verticalSpacing != 0)
 		latticeVerticalNum = (height() + verticalSpacing) / (latticeHeight + verticalSpacing);//计算屏幕能容纳的（垂直）个数
 	if (latticeHeight + horizontalSpacing != 0)
 		latticeHorizontalNum = (width() + horizontalSpacing) / (latticeWidth + horizontalSpacing);//计算屏幕能容纳的（水平）个数
 	if (latticeVerticalNum != 0)
-	{
 		latticeHorizontalNum = ((latticeHorizontalNum > ceil(float(itemsMap.size()) / latticeVerticalNum)) ? latticeHorizontalNum : ceil(float(itemsMap.size()) / latticeVerticalNum));
-		//lastXindex = ceil(float(itemsMap.size()) / latticeVerticalNum);
-		//lastYindex = itemsMap.size() % latticeVerticalNum;
-	}
 	for (llong i = 1; i <= latticeVerticalNum; i++, yNext += latticeHeight + verticalSpacing)
 		indexToCoord[i].y = yNext;
 	for (llong i = 1; i <= latticeHorizontalNum; i++, xNext += latticeWidth + horizontalSpacing)
@@ -138,96 +134,21 @@ void MyFileListWidget::initialize()
 			latticeJudge[std::pair<llong, llong>(iter->second.xIndex, iter->second.yIndex)] = true;
 		}
 	}
-	else {
+	else
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
-		{
 			if (iter->second.item != 0)
 			{
 				iter->second.item->move(indexToCoord[iter->second.xIndex].x, indexToCoord[iter->second.yIndex].y);
 				latticeJudge[std::pair<llong, llong>(iter->second.xIndex, iter->second.yIndex)] = true;
 			}
-		}
-	}
 	writeConfig(itemsMap);
-}
-
-void MyFileListWidget::threadReadDirectoryChangesProc(std::wstring path)
-{
-	typedef long long llong;
-	//auto &itemsMap = thisWidget->itemsMap;
-	HANDLE fHandle = CreateFile((path).c_str(),
-		FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 
-		NULL,
-		OPEN_EXISTING, 
-		FILE_FLAG_BACKUP_SEMANTICS,
-		0);
-	while(true)
-	{
-		if (fHandle != INVALID_HANDLE_VALUE)
-		{
-			DWORD dwBytesReturn = 0;
-			BYTE buf[1024] = {};
-			FILE_NOTIFY_INFORMATION* lpBuffer = (FILE_NOTIFY_INFORMATION*)buf;
-			BOOL RDCresult = ReadDirectoryChangesW(fHandle,
-				&buf,
-				sizeof(buf),
-				FALSE,
-				FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME,
-				&dwBytesReturn,
-				0,
-				0);
-			if (RDCresult)
-			{
-				switch (lpBuffer->Action)
-				{
-				case FILE_ACTION_ADDED:
-				{
-					std::wcout << L"创建：" << lpBuffer->FileName << std::endl;
-					std::wstring filewithpath = path + L"\\";
-					filewithpath += lpBuffer->FileName;
-					SendCreateItemSignal(lpBuffer->FileName, path);
-				}
-				break;
-				case FILE_ACTION_REMOVED:
-				{
-					std::wcout << L"删除：" << lpBuffer->FileName << std::endl;
-					SendDeleteItemSignal(lpBuffer->FileName, path);
-				}
-				break;
-				case FILE_ACTION_RENAMED_OLD_NAME:
-				{
-					std::wcout << L"重命名：" << lpBuffer->FileName << std::endl;
-					// 获取新文件名的条目
-					FILE_NOTIFY_INFORMATION* offsetFNImformation = (FILE_NOTIFY_INFORMATION*)((LPBYTE)lpBuffer + lpBuffer->NextEntryOffset);
-					if (offsetFNImformation->Action == FILE_ACTION_RENAMED_NEW_NAME)
-					{
-						// 新文件名
-						std::wstring newName(lpBuffer->FileName, lpBuffer->FileNameLength / sizeof(WCHAR));
-						std::cout << UTF8ToANSI("        ╰->");
-						std::wcout << offsetFNImformation->FileName << std::endl;
-					}
-				}
-				break;
-				//case FILE_ACTION_RENAMED_NEW_NAME://貌似这个无效
-				//{
-				//	std::wcout << L"重命名（新）：" << lpBuffer->FileName << std::endl;
-				//}
-				//break;
-
-				}
-			}
-		}
-	}
-
 }
 
 void MyFileListWidget::addItem(MyFileListItem* item/*, std::string id*/,std::string nameWithPath)
 {
 	item->setParent(this);
-	//itemsMap[id] = item;
 	itemsMap[nameWithPath].item = item;
 	itemsMap[nameWithPath].filename = nameWithPath;
-	//itemsMap[nameWithPath].id = std::stoll(id);
 	item->setViewMode(viewMode);
 }
 
@@ -246,7 +167,6 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 	}
 	default: 
 		break;
-
 	}
 }
 
@@ -256,21 +176,6 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 	p.fillRect(rect(), QColor(255, 255, 255, 0));
 	QWidget::paintEvent(e);
 }
-/*
-	for (llong i = 1; i <= latticeVerticalNum; i++)
-	{
-		if (yNext + latticeHeight > height())
-		{
-			yNext = 初始的y坐标;
-			rowCount++;
-			xNext += latticeWidth + horizontalSpacing;
-			XCoords[rowCount] = xNext;//第rowCount列的x坐标
-		}
-		YCoords[i] = yNext;//第i行的y坐标
-		yNext += latticeHeight + verticalSpacing;
-
-	}
-*/
 
 void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 {
@@ -285,15 +190,11 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 			if (latticeJudge.count(std::pair<llong, llong>(i_x, i_y)))
 			{
 				if (!latticeJudge[std::pair<llong, llong>(i_x, i_y)])
-				{
 					break;
-				}
 			}
 			else
-			{
 				//下一个位置
 				break;
-			}
 			++i_y;
 			if (i_y > latticeVerticalNum)
 			{
@@ -301,27 +202,50 @@ void MyFileListWidget::CreateItem(std::wstring name,std::wstring path)
 				i_y = 1;
 			}
 		}
-			itemsMap[(wstr2str_2UTF8(namewithpath))] = {
-				itemsMap[(wstr2str_2UTF8(namewithpath))].item,
-				wstr2str_2UTF8(name),
-				i_x,
-				i_y
-			};
-		SHFILEINFO sfi;
-		DWORD_PTR dw_ptr = SHGetFileInfo(namewithpath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
-		QIcon desktopItemIcon;
-		if (dw_ptr)
-			desktopItemIcon.addPixmap(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
+		itemsMap[(wstr2str_2UTF8(namewithpath))] = {
+			itemsMap[(wstr2str_2UTF8(namewithpath))].item,
+			wstr2str_2UTF8(name),
+			i_x,
+			i_y
+		};
+		QImage pLWItemImage;
+		//IShellItemImageFactory* ISIIFactory = nullptr;
+		//HRESULT hr = SHCreateItemFromParsingName(namewithpath.c_str(), nullptr, __uuidof(IShellItemImageFactory), (void**)&ISIIFactory);
+		//if (SUCCEEDED(hr))
+		//{
+		//	SIZE imageSize = { 256,256 };
+		//	HBITMAP bitmap;
+		//	hr = ISIIFactory->GetImage(imageSize, SIIGBF_RESIZETOFIT, &bitmap);
+		//	if (SUCCEEDED(hr))
+		//		pLWItemImage = QImage::fromHBITMAP(bitmap);
+		//	DeleteObject(bitmap);
+		//	ISIIFactory->Release();
+		//}
+		if (pLWItemImage.isNull())
+		{
+			SHFILEINFO sfi;
+			DWORD_PTR dw_ptr = SHGetFileInfo(namewithpath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
+			if (dw_ptr)
+				pLWItemImage = QImage::fromHICON(sfi.hIcon);
+		}
 		MyFileListItem* pLWItem = new MyFileListItem();
 		pLWItem->setText(wstr2str_2UTF8(name).c_str());
 		pLWItem->setPath(path);
 		pLWItem->adjustSize();
 		pLWItem->setMyIconSize(ICONSIZE);
-		pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
+		pLWItem->setImage(pLWItemImage);
+		//pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
 		addItem(pLWItem, wstr2str_2UTF8(namewithpath));
 		//pLWItem->move(indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].xIndex].x, indexToCoord[itemsMap[wstr2str_2UTF8(namewithpath)].yIndex].y);
 		connect(pLWItem, &MyFileListItem::doubleClicked, this, [=]() {desktopItemProc(namewithpath); });
 		connect(pLWItem, &MyFileListItem::deleteItem, this, [=]() {DeleteItem(pLWItem->text().toStdWString(), pLWItem->getPath()); });
+		connect(pLWItem, &MyFileListItem::selected, this, 
+			[=]() {
+				if (selectedItem != 0)
+					selectedItem->setSelected(false);
+				selectedItem = pLWItem;
+				selectedItem->setSelected(true);
+			});
 		pLWItem->show();
 		initialize();
 	}
@@ -334,26 +258,16 @@ void MyFileListWidget::DeleteItem(std::wstring name, std::wstring path)
 	namewithpath += name;
 	if (itemsMap.count(wstr2str_2UTF8(namewithpath)) > 0)
 	{
-		//++deletedCount;
-		//std::string tmpstr = deletedMaskStr + std::to_string(deletedCount);
 		if (itemsMap[wstr2str_2UTF8(namewithpath)].item != 0)
 		{
 			itemsMap[wstr2str_2UTF8(namewithpath)].item->hide();
 			disconnect(itemsMap[wstr2str_2UTF8(namewithpath)].item);
 			destroyed(itemsMap[wstr2str_2UTF8(namewithpath)].item);
 		}
-		//itemsMap[wstr2str_2UTF8(namewithpath)].item = 0;
-		//itemsMap[wstr2str_2UTF8(namewithpath)].filename = tmpstr;
-		//itemsMap[tmpstr] = itemsMap[wstr2str_2UTF8(namewithpath)];//可以是/:\*?|"<>这几个符号
-		//itemsMap[tmpstr].item = 0;
-
 		////important!!!!!!!!!!!!
 		latticeJudge[std::pair<llong, llong>(itemsMap[wstr2str_2UTF8(namewithpath)].xIndex, itemsMap[wstr2str_2UTF8(namewithpath)].yIndex)] = false;
 		itemsMap.erase(wstr2str_2UTF8(namewithpath));
 		////
-		
-		//itemsMap[wstr2str_2UTF8(namewithpath)].item->deleteLater();
-
 	}
 	delete_ing = false;
 }
@@ -380,12 +294,12 @@ void MyFileListWidget::desktopItemProc(std::wstring nameWithPath)
 	ShellExecute(0, L"open", nameWithPath.c_str(), L"", 0, SW_NORMAL);
 }
 
-void MyFileListWidget::threadCheckFilesChange()
+void MyFileListWidget::checkFilesChangeProc(std::vector<std::wstring> pathVector)
 {
 	while (true)
 	{
 		using namespace std;
-		vector<wstring> filesVector = GetFilesArrayForMultiFilePath(desktopPathVector);
+		vector<wstring> filesVector = GetFilesArrayForMultiFilePath(pathVector);
 		map<wstring/*nameWithNoPath*/, wstring/*path*/>toBeDelete;
 		for (auto iter = itemsMap.begin(); iter != itemsMap.end();iter++)
 		{
@@ -439,3 +353,72 @@ void MyFileListWidget::threadCheckFilesChange()
 		Sleep(100);
 	}
 }
+
+//void MyFileListWidget::threadReadDirectoryChangesProc(std::wstring path)
+//{
+//	typedef long long llong;
+//	//auto &itemsMap = thisWidget->itemsMap;
+//	HANDLE fHandle = CreateFile((path).c_str(),
+//		FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 
+//		NULL,
+//		OPEN_EXISTING, 
+//		FILE_FLAG_BACKUP_SEMANTICS,
+//		0);
+//	while(true)
+//	{
+//		if (fHandle != INVALID_HANDLE_VALUE)
+//		{
+//			DWORD dwBytesReturn = 0;
+//			BYTE buf[1024] = {};
+//			FILE_NOTIFY_INFORMATION* lpBuffer = (FILE_NOTIFY_INFORMATION*)buf;
+//			BOOL RDCresult = ReadDirectoryChangesW(fHandle,
+//				&buf,
+//				sizeof(buf),
+//				FALSE,
+//				FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME,
+//				&dwBytesReturn,
+//				0,
+//				0);
+//			if (RDCresult)
+//			{
+//				switch (lpBuffer->Action)
+//				{
+//				case FILE_ACTION_ADDED:
+//				{
+//					std::wcout << L"创建：" << lpBuffer->FileName << std::endl;
+//					std::wstring filewithpath = path + L"\\";
+//					filewithpath += lpBuffer->FileName;
+//					SendCreateItemSignal(lpBuffer->FileName, path);
+//				}
+//				break;
+//				case FILE_ACTION_REMOVED:
+//				{
+//					std::wcout << L"删除：" << lpBuffer->FileName << std::endl;
+//					SendDeleteItemSignal(lpBuffer->FileName, path);
+//				}
+//				break;
+//				case FILE_ACTION_RENAMED_OLD_NAME:
+//				{
+//					std::wcout << L"重命名：" << lpBuffer->FileName << std::endl;
+//					// 获取新文件名的条目
+//					FILE_NOTIFY_INFORMATION* offsetFNImformation = (FILE_NOTIFY_INFORMATION*)((LPBYTE)lpBuffer + lpBuffer->NextEntryOffset);
+//					if (offsetFNImformation->Action == FILE_ACTION_RENAMED_NEW_NAME)
+//					{
+//						// 新文件名
+//						std::wstring newName(lpBuffer->FileName, lpBuffer->FileNameLength / sizeof(WCHAR));
+//						std::cout << UTF8ToANSI("        ╰->");
+//						std::wcout << offsetFNImformation->FileName << std::endl;
+//					}
+//				}
+//				break;
+//				//case FILE_ACTION_RENAMED_NEW_NAME://貌似这个无效
+//				//{
+//				//	std::wcout << L"重命名（新）：" << lpBuffer->FileName << std::endl;
+//				//}
+//				//break;
+//
+//				}
+//			}
+//		}
+//	}
+//}

@@ -57,7 +57,7 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     QScreen* sc = this->screen();
     QRect re = sc->geometry();
     re = sc->availableGeometry();
-    MyFileListWidget* pLWidget = new MyFileListWidget(this,"");
+    MyFileListWidget* pLWidget = new MyFileListWidget(this,""/*文件夹路径C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试*/);
     pLWidget->setViewMode(MyFileListItem::ViewMode::Icon);
     pLWidget->setConfigFileName("config.ini");
 
