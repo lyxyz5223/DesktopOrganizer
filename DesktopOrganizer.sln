@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.35122.118
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DesktopOrganizer", "DesktopOrganizer.vcxproj", "{635E9FCF-4735-4220-90A8-CC28EC23EB00}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{635E9FCF-4735-4220-90A8-CC28EC23EB00}.Debug|x64.ActiveCfg = Debug|x64
+		{635E9FCF-4735-4220-90A8-CC28EC23EB00}.Debug|x64.Build.0 = Debug|x64
+		{635E9FCF-4735-4220-90A8-CC28EC23EB00}.Release|x64.ActiveCfg = Release|x64
+		{635E9FCF-4735-4220-90A8-CC28EC23EB00}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {23DD1BBE-BBE8-44AB-9665-84D82CB6A0A3}
+	EndGlobalSection
+EndGlobal
