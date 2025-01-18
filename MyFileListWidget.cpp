@@ -36,6 +36,8 @@
 //My Windows
 #include "fileProc.h"
 //声明&定义
+
+
 bool isDigits(std::wstring wstr)
 {
 	for (wchar_t ch : wstr)
@@ -66,8 +68,10 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)// : QWidget(parent)
 {
 	setAttribute(Qt::WA_TranslucentBackground, true);
-	//setWindowFlags(Qt::FramelessWindowHint);
+	setWindowFlags(Qt::FramelessWindowHint);
 	SetParent((HWND)winId(), (HWND)parent->winId());
+	setMouseTracking(true);
+	installEventFilter(this);
 	this->pathsList = pathsList;
 	configFileNameWithPath = config;
 	if (!readConfigFile(config))
@@ -102,13 +106,98 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 	}
 }
 
+void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
+{
+	switch (e->button())
+	{
+	case Qt::MouseButton::LeftButton:
+	{
+		selectionArea->hide();
+	}
+		break;
+	default:
+		break;
+	}
+}
+
 void MyFileListWidget::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
-	p.fillRect(rect(), QColor(255, 255, 255, 0));
+	p.fillRect(rect(), QColor(255, 255, 255, 1));
 
+	//选中区域的绘制
+	//p.fillRect(selectionRect, QColor(10, 123, 212, 100));
+	//p.setPen(QColor(10, 123, 212));
+	//p.drawRect(selectionRect);
 	QWidget::paintEvent(e);
 }
+void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
+{
+	if (e->buttons() & Qt::LeftButton)
+	{
+		QPoint p = mapToParent(e->pos());
+		selectionRect.setBottomRight(p);
+		selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
+			(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
+		selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
+			selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
+		selectionArea->update();
+		update();
+		//std::cout << selectionRect.x() << "," << selectionRect.y()
+		//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
+	}
+
+}
+bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
+{
+	switch (event->type())
+	{
+	case QEvent::MouseButtonPress:
+	{
+		QMouseEvent* e = static_cast<QMouseEvent*>(event);
+		switch (e->button())
+		{
+		case Qt::LeftButton:
+		{
+#ifdef _DEBUG
+			std::cout << "leftButtonPress" << std::endl;
+#endif // _DEBUG
+			QPoint p = mapToParent(e->pos());
+			selectionRect = QRect(p.x(), p.y(), 0, 0);
+			if (!selectionArea)
+				selectionArea = new SelectionArea(this);
+			selectionArea->resize(0, 0);
+			selectionArea->show();
+			selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
+				(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	case QEvent::MouseButtonRelease:
+	{
+		QMouseEvent* e = static_cast<QMouseEvent*>(event);
+		switch (e->button())
+		{
+		case Qt::LeftButton:
+		{
+#ifdef _DEBUG
+			std::cout << "leftButtonRelease" << std::endl;
+#endif
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	}
+	return QWidget::eventFilter(watched, event);
+}
+
 std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, std::wstring delimiter/*separator,分隔符*/, std::wstring EscapeString /*char EscapeCharacter*/)
 {
 	std::vector<std::wstring> result(3);

@@ -1,6 +1,7 @@
 #pragma once
 #include <qwidget.h>
 #include "MyFileListItem.h"
+#include "SelectionArea.h"
 #include <map>
 #include <unordered_map>
 #include <set>
@@ -41,6 +42,10 @@ public slots:
 protected:
 	void paintEvent(QPaintEvent* e) override;
 	void mousePressEvent(QMouseEvent* e);
+	void mouseReleaseEvent(QMouseEvent* e);
+	void mouseMoveEvent(QMouseEvent* e);
+	bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
 	struct ItemProp {
 		MyFileListItem* item = 0;//Qt Item
@@ -64,6 +69,8 @@ private:
 	void changeItemSizeAndNumbersPerColumn();
 	bool isRemovingItem = false;
 	bool isCreatingItem = false;
+	QRect selectionRect;// 框选区域
+	SelectionArea* selectionArea;// 框选区域图形
 
 	size_t itemsNumPerColumn = 0;
 	QSize itemSize;

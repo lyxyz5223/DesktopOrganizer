@@ -44,6 +44,42 @@ MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize) : QPushButton
 	connect(this, &MyFileListItem::moveSignal, this, [=](QPoint pos) { move(pos); });
 }
 
+MyFileListItem::MyFileListItem(MyFileListItem& item, bool isShadow) : QPushButton(item.parentWidget())
+{
+	setAttribute(Qt::WA_TranslucentBackground, true);
+	setWindowFlags(Qt::FramelessWindowHint);
+	setMouseTracking(true);
+	installEventFilter(this);
+	//itemTextSize.setHeight(25);
+	setCheckable(true);
+	setAutoExclusive(true);
+	connect(this, &MyFileListItem::doubleClicked, this, [=]() {
+#ifdef _DEBUG
+		std::cout << UTF8ToANSI(wstr2str_2UTF8(getPath()) + text().toStdString()).c_str() << std::endl;
+#endif // _DEBUG
+		ShellExecute(0, L"open", (getPath() + text().toStdWString()).c_str(), L"", 0, SW_NORMAL);
+		});
+	connect(this, &MyFileListItem::removeSelfSignal, this, &MyFileListItem::removeSelfSlot);
+	connect(this, &MyFileListItem::moveSignal, this, [=](QPoint pos) { move(pos); });
+
+	// 复制原有成员
+	viewMode = item.viewMode;
+	itemImage = item.itemImage;
+	itemTextSize = item.itemTextSize;
+	MyPath = item.MyPath;
+	startPosOffset = item.startPosOffset;
+	if (isShadow)
+	{
+		bgBrush = item.bgBrush_Shadow;//background
+		isShadowItem = true;
+		setWindowOpacity(0.6);
+	}
+	else
+		bgBrush = item.bgBrush;
+	setText(item.text());
+	resize(item.size());
+
+}
 void MyFileListItem::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
@@ -61,6 +97,8 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 			bgBrush = bgBrush_Selected;
 		else if (!isChecked())
 			bgBrush = bgBrush_Default;
+	if (isShadowItem)
+		bgBrush = bgBrush_Shadow;
 	p.setBrush(bgBrush);
 	//p.setBrush(QBrush(QColor(100, 100, 119, 100)));
 	p.drawRoundedRect(qrect1, xr, yr, Qt::SizeMode::AbsoluteSize);
@@ -143,6 +181,7 @@ bool MyFileListItem::eventFilter(QObject* watched, QEvent* event)
 
 	return false;
 }
+
 
 void MyFileListItem::setViewMode(ViewMode View_Mode)
 {
@@ -230,20 +269,51 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 		break;
 	}
 	case Qt::MouseButton::LeftButton:
+	{
 		bgBrush = bgBrush_Selected;
 		setChecked(true);
 		emit selected();
 		update();
+		shadowItem = new MyFileListItem(*this, true);
+		shadowItem->move(pos());
+		QCursor cursor;
+		QPoint startPos = cursor.pos();
+		startPosOffset.setX(startPos.x() - pos().x());
+		startPosOffset.setY(startPos.y() - pos().y());
+	}
 		break;
 	default:
 		break;
 	}
+}
+void MyFileListItem::mouseMoveEvent(QMouseEvent* e)
+{
+	if (e->buttons() & Qt::MouseButton::LeftButton)
+	{
+		if (shadowItem)
+		{
+			shadowItem->show();
+
+			QPoint pos(e->globalPosition().x(), e->globalPosition().y());
+			//std::cout << pos.x() << "," << pos.y() << std::endl;
+			shadowItem->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
+		}
+	}
+
 }
 void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
 {
 	switch (e->button())
 	{
 	case Qt::MouseButton::LeftButton:
+	{
+		if (shadowItem)
+		{
+			shadowItem->destroy();
+			shadowItem->deleteLater();
+			shadowItem = nullptr;
+		}
+	}
 		break;
 	default:
 		break;
