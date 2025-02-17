@@ -16,6 +16,8 @@
 #include <qevent.h>
 #include <QMenu>
 #include <qmessagebox.h>
+#include <qdrag.h>
+#include <qmimedata.h>
 
 //C++
 #include <fstream>
@@ -33,7 +35,7 @@
 #define OTL_ODBC
 #include "./lib/otlv4.h"
 
-//My Windows
+//My Lib
 #include "fileProc.h"
 //声明&定义
 
@@ -54,6 +56,7 @@ bool PathCompletion(std::wstring& path)
 		path += L'\\';
 	return true;
 }
+
 void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 {
 	QScreen* sc = this->screen();
@@ -72,15 +75,18 @@ MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pa
 	SetParent((HWND)winId(), (HWND)parent->winId());
 	setMouseTracking(true);
 	installEventFilter(this);
+	setAcceptDrops(true);
 	this->pathsList = pathsList;
 	configFileNameWithPath = config;
+	grabArea->hide();
 	if (!readConfigFile(config))
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 	/*计算item大小和每列item的个数*/
 	changeItemSizeAndNumbersPerColumn();
 
 	connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
-	connect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem);
+
+	connect(this, SIGNAL(removeItemSignal(std::wstring, std::wstring)), this, SLOT(removeItem(std::wstring, std::wstring)));
 	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
 	{
 		std::thread checkFilesChangeThread(&MyFileListWidget::checkFilesChangeProc, this, *i);
@@ -92,6 +98,12 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 {
 	switch (e->button())
 	{
+	case Qt::MouseButton::LeftButton:
+	{
+		selectionArea->move(mapToParent(e->pos()));
+		selectionArea->reset();
+		break;
+	}
 	case Qt::MouseButton::RightButton:
 	{
 		QMenu* menu1 = new QMenu(this);
@@ -113,6 +125,7 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 	case Qt::MouseButton::LeftButton:
 	{
 		selectionArea->hide();
+
 	}
 		break;
 	default:
@@ -142,9 +155,9 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 		selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
 			selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
 		selectionArea->update();
-		update();
 		//std::cout << selectionRect.x() << "," << selectionRect.y()
 		//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
+
 	}
 
 }
@@ -164,9 +177,8 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 #endif // _DEBUG
 			QPoint p = mapToParent(e->pos());
 			selectionRect = QRect(p.x(), p.y(), 0, 0);
-			if (!selectionArea)
-				selectionArea = new SelectionArea(this);
-			selectionArea->resize(0, 0);
+			selectionArea->reset();
+			selectionArea->raise();
 			selectionArea->show();
 			selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
 				(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
@@ -196,6 +208,39 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 	}
 	}
 	return QWidget::eventFilter(watched, event);
+}
+
+void MyFileListWidget::dragEnterEvent(QDragEnterEvent* e)
+{
+	if (e->mimeData()->hasFormat("text/uri-list"))
+		e->acceptProposedAction();
+}
+
+void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
+{
+	if (grabArea)
+	{
+		grabArea->show();
+		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
+		QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
+		// std::cout << pos.x() << "," << pos.y() << std::endl;
+
+		grabArea->move(pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(), pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y());
+	}
+
+}
+
+// 当不接受QDrag的drop事件时调用
+void MyFileListWidget::dragLeaveEvent(QDragLeaveEvent* e)
+{
+
+}
+
+// 接受QDrag的drop时调用
+void MyFileListWidget::dropEvent(QDropEvent* e)
+{
+	if(grabArea)
+		grabArea->hide();
 }
 
 std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, std::wstring delimiter/*separator,分隔符*/, std::wstring EscapeString /*char EscapeCharacter*/)
@@ -413,9 +458,8 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		{
 			if (i->second.item != nullptr)
 			{
-				isRemovingItem = true;
-				i->second.item->deleteLater();
-				isRemovingItem = false;
+				sendRemoveItemSignal(i->second.name, i->second.path);
+				while (isRemovingItem) Sleep(10);
 			}
 			tmpItemsMap.erase(i++);//////////////////////////////////////////
 		}
@@ -429,10 +473,12 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 			int yIndex = i->second.position % itemsNumPerColumn + 1;
 			QPoint itemPos = QPoint(
 				(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column,
-				(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line);
-			if (i->second.item && itemPos != i->second.item->pos())
-				emit i->second.item->moveSignal(itemPos);
+				(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line
+			);
+			if (i->second.item && itemPos != ((MyFileListItem*)i->second.item)->pos())
+				emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
 		}
+		Sleep(10);
 	}
 }
 
@@ -487,6 +533,8 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		pLWItem->setViewMode(viewMode);
 		pLWItem->setPath(path);
 		pLWItem->setImage(pLWItemImage);
+		pLWItem->setSelectionArea(selectionArea);
+		pLWItem->setGrabArea(grabArea);
 		//pLWItem->adjustSize();
 		QPoint itemPos = QPoint(
 			(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column, 
@@ -496,6 +544,18 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		connect(pLWItem, &MyFileListItem::removeSelfSignal, this, [=]() {
 			emit removeItemSignal(pLWItem->text().toStdWString(), pLWItem->getPath());
 			});
+		connect(pLWItem, &MyFileListItem::checkChange, this, [=](bool checkState) {
+			if (checkState)
+			{
+				ItemProp ip = itemsMap[path + name];
+				grabArea->addItem(ip);
+			}
+			else
+			{
+				grabArea->removeItem(name, path);
+			}
+			});
+		
 		/*将新添加的item加入map*/
 		auto position = itemsMap[nameWithPath].position;
 		itemsMap[nameWithPath] = { pLWItem, name, path, (position == -1 ? (long long)st : position)};
@@ -509,9 +569,19 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 {
 	isRemovingItem = true;
 	while (isCreatingItem) Sleep(10);
+	if (itemsMap.count(path + name))
+	{
+		void*& item = itemsMap[path + name].item;
+		if (item)
+		{
+			static_cast<MyFileListItem*>(item)->deleteLater();
+			item = nullptr;
+		}
+	}
 	writeConfigFile(configFileNameWithPath);
 	isRemovingItem = false;
 }
+
 //void MyFileListWidget::threadReadDirectoryChangesProc(std::wstring path)
 //{
 //	typedef long long llong;

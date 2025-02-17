@@ -95,6 +95,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="fileProc.cpp" />
+    <ClCompile Include="GrabArea.cpp" />
     <ClCompile Include="MyFileListItem.cpp" />
     <ClCompile Include="MyFileListWidget.cpp" />
     <ClCompile Include="SelectionArea.cpp" />
@@ -109,10 +110,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="fileProc.h" />
+    <ClInclude Include="GrabArea.h" />
+    <ClInclude Include="ItemProperty.h" />
     <ClInclude Include="lib\otlv4.h" />
     <QtMoc Include="MyFileListWidget.h" />
     <QtMoc Include="MyFileListItem.h" />
-    <ClInclude Include="SelectionArea.h" />
+    <QtMoc Include="SelectionArea.h" />
     <ClInclude Include="stringProcess.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

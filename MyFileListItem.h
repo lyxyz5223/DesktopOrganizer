@@ -1,5 +1,15 @@
 #pragma once
 #include <qpushbutton.h>
+#include <qdrag.h>
+#include "ItemProperty.h"
+
+#ifndef MYFILELISTITEM_H
+#define MYFILELISTITEM_H
+#include "GrabArea.h"
+#include "SelectionArea.h"
+#include <QMimeData>
+
+
 
 class MyFileListItem : public QPushButton
 {
@@ -11,8 +21,11 @@ public:
 	};
 	~MyFileListItem() {}
 	MyFileListItem(QWidget* parent, QSize defaultSize);
-	MyFileListItem(MyFileListItem& item, bool isShadow = false/*拖动的影子*/);
-	void setViewMode(ViewMode View_Mode);
+	MyFileListItem(const MyFileListItem& item, bool isShadow = false/*拖动的影子*/);
+	void initialize(QWidget* parent, QSize defaultSize, bool isShadow);
+	void setViewMode(ViewMode View_Mode) {
+		viewMode = View_Mode;
+	}
 	void setImage(QImage image) {
 		itemImage = image;
 	}
@@ -26,20 +39,42 @@ public:
 	std::wstring getPath() {
 		return MyPath;
 	}
+	void onSelectionAreaResize();
+	void setSelectionArea(SelectionArea* selectionArea) {
+		if (this->selectionArea)
+			disconnect(this->selectionArea, &SelectionArea::resized, this, &MyFileListItem::onSelectionAreaResize);
+		this->selectionArea = selectionArea;
+		connect(selectionArea, &SelectionArea::resized, this, &MyFileListItem::onSelectionAreaResize);
+	}
+	void setGrabArea(GrabArea* grabArea) {
+		this->grabArea = grabArea;
+	}
+	void setChecked(bool judge) {
+		if (isChecked() != judge)
+		{
+			QPushButton::setChecked(judge);
+			emit checkChange(judge);
+		}
+	}
 
 protected:
 	void mousePressEvent(QMouseEvent* e) override;
 	void mouseReleaseEvent(QMouseEvent* e) override;
 	void paintEvent(QPaintEvent* e) override;
-	void mouseDoubleClickEvent(QMouseEvent* e) override;
+	void mouseDoubleClickEvent(QMouseEvent* e) override {
+		//MessageBox(0, L"DoubleClicked!!!", L"", 0);
+		emit doubleClicked();
+	}
 	bool eventFilter(QObject* watched, QEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* e) override;
+	void dragMoveEvent(QDragMoveEvent* e) override;
+	void dragEnterEvent(QDragEnterEvent* event) override;
 
 signals:
 	void doubleClicked();
 	void removeSelfSignal();
-	void selected();
 	void moveSignal(QPoint);
+	void checkChange(bool);
 
 public slots:
 	void MenuClickedProc(QAction* action);
@@ -61,6 +96,9 @@ private:
 	//
 	QPoint startPosOffset;// 鼠标与item左上角坐标的偏移，为正数
 	bool isShadowItem = false;
-	MyFileListItem* shadowItem = nullptr;
+	SelectionArea* selectionArea = nullptr;// 选择区域
+	GrabArea* grabArea = nullptr;
 };
 
+
+#endif //MYFILELISTITEM_H

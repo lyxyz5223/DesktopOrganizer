@@ -2,14 +2,18 @@
 #include <qwidget.h>
 #include "MyFileListItem.h"
 #include "SelectionArea.h"
+#include "GrabArea.h"
+
 #include <map>
 #include <unordered_map>
 #include <set>
+
 
 class MyFileListWidget : public QWidget
 {
 	Q_OBJECT
 public:
+
 	~MyFileListWidget() {}
 	//MyFileListWidget(QWidget* parent = nullptr);
 	MyFileListWidget(QWidget* parent,
@@ -27,9 +31,11 @@ public:
 	bool writeConfigFile(std::wstring nameWithPath);
 	void checkFilesChangeProc(std::wstring path);
 	void sendCreateItemSignal(std::wstring name, std::wstring path) {
+		isCreatingItem = true;
 		emit createItemSignal(name, path);
 	}
 	void sendRemoveItemSignal(std::wstring name, std::wstring path) {
+		isRemovingItem = true;
 		emit removeItemSignal(name, path);
 	}
 signals:
@@ -45,24 +51,19 @@ protected:
 	void mouseReleaseEvent(QMouseEvent* e);
 	void mouseMoveEvent(QMouseEvent* e);
 	bool eventFilter(QObject* watched, QEvent* event) override;
+	void dragEnterEvent(QDragEnterEvent* e) override;
+	void dragMoveEvent(QDragMoveEvent* e) override;
+	void dragLeaveEvent(QDragLeaveEvent* e) override;
+	void dropEvent(QDropEvent* e) override;
 
 private:
-	struct ItemProp {
-		MyFileListItem* item = 0;//Qt Item
-		std::wstring name = L"";//No path
-		std::wstring path = L"";
-		long long position = -1;// 计算后可得到具体坐标
-	};
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
 	std::unordered_map<std::wstring/*name with path*/, ItemProp> itemsMap;// 文件列表
 	std::vector<std::wstring> pathsList;// 文件路径列表
 	std::wstring indexesState = L"0";// 按列计算的索引状态，1表示已占用，0表示未占用
 	std::wstring configFileNameWithPath;
 	QFont itemFont;
-	struct Spacing {
-		int line;//行间隔
-		int column;//列间隔
-	} itemSpacing = { 15, 15 };
+	Spacing itemSpacing = { 15, 15 };
 
 	//临时
 	int zoomScreen = 10;//item的高度是屏幕高度/宽度中小的那个的1/zoomScreen倍
@@ -70,9 +71,11 @@ private:
 	bool isRemovingItem = false;
 	bool isCreatingItem = false;
 	QRect selectionRect;// 框选区域
-	SelectionArea* selectionArea;// 框选区域图形
-
+	SelectionArea* selectionArea = new SelectionArea(this);// 框选区域图形
 	size_t itemsNumPerColumn = 0;
 	QSize itemSize;
+	GrabArea* grabArea = new GrabArea(this, itemsNumPerColumn, itemSize, itemSpacing);// 选中文件拖动区域
+
+
 
 };

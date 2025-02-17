@@ -61,12 +61,18 @@
     <ClCompile Include="SelectionArea.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GrabArea.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="MyFileListWidget.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="MyFileListItem.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="SelectionArea.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
@@ -80,7 +86,10 @@
     <ClInclude Include="lib\otlv4.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="SelectionArea.h">
+    <ClInclude Include="GrabArea.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ItemProperty.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -4,6 +4,8 @@
 #include <QFontMetrics>
 #include <QMenu>
 #include <qevent.h>
+#include <qdrag.h>
+#include <qmimedata.h>
 
 //C++
 #include <iostream>
@@ -13,16 +15,14 @@
 #include <Windows.h>
 
 QString elidedMultiLinesText(QWidget* widget, QString text, int lines, Qt::TextElideMode ElideMode);
-
-MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize) : QPushButton(parent)
+void MyFileListItem::initialize(QWidget* parent, QSize defaultSize, bool isShadow)
 {
 	setAttribute(Qt::WA_TranslucentBackground, true);
-	setWindowFlags(Qt::FramelessWindowHint);
+	setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnBottomHint);
 	setMouseTracking(true);
 	installEventFilter(this);
 	//itemTextSize.setHeight(25);
 	setCheckable(true);
-	setAutoExclusive(true);
 	if (!defaultSize.isEmpty())// isEmpty():Returns true if either of the width and height is less than or equal to 0; otherwise returns false.
 	{
 		// defaultSize的width和height均不为0时设置
@@ -42,37 +42,35 @@ MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize) : QPushButton
 		});
 	connect(this, &MyFileListItem::removeSelfSignal, this, &MyFileListItem::removeSelfSlot);
 	connect(this, &MyFileListItem::moveSignal, this, [=](QPoint pos) { move(pos); });
+
+}
+MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize) : QPushButton(parent)
+{
+	initialize(parent, defaultSize, false);//初始化
 }
 
-MyFileListItem::MyFileListItem(MyFileListItem& item, bool isShadow) : QPushButton(item.parentWidget())
+MyFileListItem::MyFileListItem(const MyFileListItem& item, bool isShadow) : QPushButton(item.parentWidget())
 {
-	setAttribute(Qt::WA_TranslucentBackground, true);
-	setWindowFlags(Qt::FramelessWindowHint);
-	setMouseTracking(true);
-	installEventFilter(this);
-	//itemTextSize.setHeight(25);
-	setCheckable(true);
-	setAutoExclusive(true);
-	connect(this, &MyFileListItem::doubleClicked, this, [=]() {
-#ifdef _DEBUG
-		std::cout << UTF8ToANSI(wstr2str_2UTF8(getPath()) + text().toStdString()).c_str() << std::endl;
-#endif // _DEBUG
-		ShellExecute(0, L"open", (getPath() + text().toStdWString()).c_str(), L"", 0, SW_NORMAL);
-		});
-	connect(this, &MyFileListItem::removeSelfSignal, this, &MyFileListItem::removeSelfSlot);
-	connect(this, &MyFileListItem::moveSignal, this, [=](QPoint pos) { move(pos); });
+	if (!isShadow)
+		initialize(item.parentWidget(), item.size(), true);//初始化函数
+	else
+	{
+		setAttribute(Qt::WA_TransparentForMouseEvents, true);
+		setAttribute(Qt::WA_InputMethodTransparent, true);
+		setWindowFlags(windowFlags() | Qt::WindowTransparentForInput);
+	}
 
 	// 复制原有成员
 	viewMode = item.viewMode;
 	itemImage = item.itemImage;
 	itemTextSize = item.itemTextSize;
 	MyPath = item.MyPath;
-	startPosOffset = item.startPosOffset;
+	//startPosOffset = item.startPosOffset;
 	if (isShadow)
 	{
 		bgBrush = item.bgBrush_Shadow;//background
 		isShadowItem = true;
-		setWindowOpacity(0.6);
+		setWindowOpacity(0.6);//无效
 	}
 	else
 		bgBrush = item.bgBrush;
@@ -93,10 +91,12 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 	//qrect1.setHeight(qrect1.height() - 1);
 	p.setPen(Qt::NoPen);
 	if (bgBrush != bgBrush_MouseMove)
+	{
 		if (isChecked())
 			bgBrush = bgBrush_Selected;
 		else if (!isChecked())
 			bgBrush = bgBrush_Default;
+	}
 	if (isShadowItem)
 		bgBrush = bgBrush_Shadow;
 	p.setBrush(bgBrush);
@@ -164,30 +164,40 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 	QWidget::paintEvent(e);
 	//QPushButton::paintEvent(e);
 }
-void MyFileListItem::mouseDoubleClickEvent(QMouseEvent* e)
-{
-	//MessageBox(0, L"DoubleClicked!!!", L"", 0);
-	emit doubleClicked();
-}
+
 
 bool MyFileListItem::eventFilter(QObject* watched, QEvent* event)
 {
+
 	if (event->type() == QEvent::Enter)
 		bgBrush = bgBrush_MouseMove;
 	else if (event->type() == QEvent::Leave && !isChecked())
 		bgBrush = bgBrush_Default;
 	else if (event->type() == QEvent::Leave && isChecked())
 		bgBrush = bgBrush_Selected;
-
-	return false;
+	return QPushButton::eventFilter(watched, event);
 }
-
-
-void MyFileListItem::setViewMode(ViewMode View_Mode)
+void MyFileListItem::onSelectionAreaResize()
 {
-	viewMode = View_Mode;
+	bool checked = true;
+	//for (int i = 0; i < 2; i++)
+	if (selectionArea)
+	{
+		QRect thisRect = geometry();
+		QRect selectionAreaRect = selectionArea->geometry();
+		if (thisRect.right() < selectionAreaRect.left()
+			|| thisRect.left() > selectionAreaRect.right()
+			|| thisRect.top() > selectionAreaRect.bottom()
+			|| thisRect.bottom() < selectionAreaRect.top())
+			checked = false;
+	}
+	if (checked)
+		setChecked(true);
+	else
+		setChecked(false);
 }
-void MyFileListItem::adjustSize() {
+void MyFileListItem::adjustSize()
+{
 	QString Qtext = text();
 	if (Qtext.right(4) == ".lnk" || Qtext.right(4) == ".url") // 这两种后缀名的文件直接省略后缀
 		Qtext = Qtext.left(Qtext.size() - 4);
@@ -270,16 +280,76 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 	}
 	case Qt::MouseButton::LeftButton:
 	{
-		bgBrush = bgBrush_Selected;
-		setChecked(true);
-		emit selected();
-		update();
-		shadowItem = new MyFileListItem(*this, true);
-		shadowItem->move(pos());
-		QCursor cursor;
-		QPoint startPos = cursor.pos();
-		startPosOffset.setX(startPos.x() - pos().x());
-		startPosOffset.setY(startPos.y() - pos().y());
+		//bgBrush = bgBrush_Selected;
+		//setChecked(true);
+		//update();
+
+		//QPoint p = mapToParent(e->pos());
+		//selectionArea->move(p);
+		//selectionArea->reset();
+		if (grabArea)
+		{
+			QCursor cursor;
+			QPoint startPos = cursor.pos();
+			startPosOffset.setX(startPos.x() - grabArea->pos().x());
+			startPosOffset.setY(startPos.y() - grabArea->pos().y());
+			grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
+
+		}
+		if (isChecked())
+		{
+			//如果已经选中，则准备拖动事宜
+			if (grabArea)
+			{
+				//	grabArea->show();
+				QList<QUrl> urls;
+				const auto sels = grabArea->getSelectedItemsKeys();
+				for (auto iter = sels.begin(); iter != sels.end(); iter++)
+				{
+					QUrl url = QUrl::fromLocalFile(QString::fromStdWString(*iter));
+					urls.push_back(url);
+				}
+				QMimeData* mimeData = new QMimeData();
+				mimeData->setUrls(urls);
+				QDrag* drag = new QDrag(this);
+				drag->setMimeData(mimeData);
+				QImage dragImage(1, 1, QImage::Format_ARGB32);
+				dragImage.fill(QColor(255, 255, 255, 0));
+				drag->setPixmap(QPixmap::fromImage(dragImage));
+				drag->exec();
+			}
+		}
+		else
+		{
+			//未选中则选中（单选）
+			if (selectionArea)
+			{
+				selectionArea->move(mapToParent(e->pos()));
+				selectionArea->reset();
+			}
+			if (grabArea)
+			{
+				QCursor cursor;
+				QPoint startPos = cursor.pos();
+				startPosOffset.setX(startPos.x() - pos().x() + grabArea->getItemSpacing().column);
+				startPosOffset.setY(startPos.y() - pos().y() + grabArea->getItemSpacing().line);
+				grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
+
+				QList<QUrl> urls;
+				QUrl url = QUrl::fromLocalFile(QString::fromStdWString(this->MyPath) + this->text());
+				urls.push_back(url);
+				QMimeData* mimeData = new QMimeData();
+				mimeData->setUrls(urls);
+				QDrag* drag = new QDrag(this);
+				drag->setMimeData(mimeData);
+				//drag->setPixmap(QPixmap::fromImage(this->itemImage));
+				QImage dragImage(1, 1, QImage::Format_ARGB32);
+				dragImage.fill(QColor(255, 255, 255, 0));
+				drag->setPixmap(QPixmap::fromImage(dragImage));
+				drag->exec();
+			}
+		}
+
 	}
 		break;
 	default:
@@ -288,17 +358,31 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 }
 void MyFileListItem::mouseMoveEvent(QMouseEvent* e)
 {
-	if (e->buttons() & Qt::MouseButton::LeftButton)
+	if (e->buttons() & Qt::MouseButton::LeftButton)// 左键拖动
 	{
-		if (shadowItem)
+		//if (shadowItem)
+		//{
+		//	shadowItem->show();
+		//	QPoint pos(e->globalPosition().x(), e->globalPosition().y());
+		//	//std::cout << pos.x() << "," << pos.y() << std::endl;
+		//	shadowItem->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
+		//}
+		if (grabArea)
 		{
-			shadowItem->show();
-
+			grabArea->show();
 			QPoint pos(e->globalPosition().x(), e->globalPosition().y());
-			//std::cout << pos.x() << "," << pos.y() << std::endl;
-			shadowItem->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
+			//QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
+			// std::cout << pos.x() << "," << pos.y() << std::endl;
+			grabArea->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
 		}
 	}
+}
+void MyFileListItem::dragMoveEvent(QDragMoveEvent* e)
+{
+
+}
+void MyFileListItem::dragEnterEvent(QDragEnterEvent* event)
+{
 
 }
 void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
@@ -307,12 +391,8 @@ void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
 	{
 	case Qt::MouseButton::LeftButton:
 	{
-		if (shadowItem)
-		{
-			shadowItem->destroy();
-			shadowItem->deleteLater();
-			shadowItem = nullptr;
-		}
+		if(grabArea)
+			grabArea->hide();
 	}
 		break;
 	default:

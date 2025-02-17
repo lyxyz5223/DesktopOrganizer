@@ -1,8 +1,12 @@
 #include "SelectionArea.h"
 #include <qpainter.h>
+#include <qevent.h>
+
 SelectionArea::SelectionArea(QWidget* parent) : QWidget(parent)
 {
-
+	resize(0, 0);
+	setWindowFlags(Qt::WindowStaysOnTopHint);
+	setAttribute(Qt::WA_AlwaysStackOnTop, true);
 }
 
 void SelectionArea::paintEvent(QPaintEvent* e)
@@ -12,4 +16,10 @@ void SelectionArea::paintEvent(QPaintEvent* e)
 	p.setPen(QColor(10, 123, 212));
 	p.drawRect(rect());
 	QWidget::paintEvent(e);
+}
+
+void SelectionArea::resizeEvent(QResizeEvent* e)
+{
+	//if(!e->size().isNull())
+		//emit resized(e);
 }
