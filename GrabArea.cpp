@@ -5,6 +5,7 @@
 #include <iostream>
 #include <QUrl>
 
+
 extern bool PathCompletion(std::wstring& path);
 QPoint relativePosTransition(QWidget* from, QPoint fromPos, QWidget* to)
 {
@@ -43,6 +44,10 @@ GrabArea::GrabArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, 
 	parentWidget = parent;
 	QWidget::resize(0, 0);
 	QWidget::move(0, 0);
+	connect(this, &GrabArea::moveSignal, this, &GrabArea::moveSlot);
+	connect(this, &GrabArea::hideSignal, this, &GrabArea::hide);
+	//std::thread threadCheckCursorPosChange(&GrabArea::checkCursorPosChange, this);
+	//threadCheckCursorPosChange.detach();
 }
 
 
@@ -55,14 +60,8 @@ void GrabArea::removeItem(std::wstring name, std::wstring path)
 		ItemWithPosition& childrenStruct = children_map[nameWithPath];
 
 		auto iter_children_key = std::find(children_keys.begin(), children_keys.end(), nameWithPath);
-		children_keys.erase(iter_children_key);
-		QUrl url;
-		url.fromLocalFile(QString::fromStdWString(nameWithPath));
-		//if (children_urls.contains(url))
-		//{
-		//	qsizetype qst = children_urls.indexOf(url);
-		//	children_urls.removeAt(qst);
-		//}
+		if (iter_children_key != children_keys.end())
+			children_keys.erase(iter_children_key);
 
 		void* p = childrenStruct.item;
 		auto item = static_cast<MyFileListItem*>(p);
@@ -70,16 +69,16 @@ void GrabArea::removeItem(std::wstring name, std::wstring path)
 
 		QRect r = childrenStruct.originalGeometry;
 		auto iter = std::find(leftMost.begin(), leftMost.end(), r.left());
-		//if(iter != leftMost.end())
+		if (iter != leftMost.end())
 			leftMost.erase(iter);
 		iter = std::find(topMost.begin(), topMost.end(), r.top());
-		//if(iter != topMost.end())
+		if (iter != topMost.end())
 			topMost.erase(iter);
 		iter = std::find(rightMost.begin(), rightMost.end(), r.right());
-		//if(iter != rightMost.end())
+		if (iter != rightMost.end())
 			rightMost.erase(iter);
 		iter = std::find(bottomMost.begin(), bottomMost.end(), r.bottom());
-		//if(iter != bottomMost.end())
+		if (iter != bottomMost.end())
 			bottomMost.erase(iter);
 
 
@@ -196,3 +195,25 @@ void GrabArea::ChangeGoalGeometry()
 		goalGeometry.setBottomRight(QPoint(rightMost.back() + itemSpacing.column, bottomMost.back() + itemSpacing.line));
 	}
 }
+
+
+//void GrabArea::checkCursorPosChange()
+//{
+//	while (true)
+//	{
+//		if (this->isHidden())
+//			continue;
+//
+//		QCursor cur;
+//		SHORT ks = (GetKeyState(VK_LBUTTON) >> (sizeof(SHORT) * 8 - 1) & 1);
+//		if (ks)
+//		{
+//			QPoint cursorPos(cur.pos());
+//			emit moveSignal(QPoint(cursorPos.x() - cursorPosOffsetWhenMousePress.x(), cursorPos.y() - cursorPosOffsetWhenMousePress.y()));
+//		}
+//		else {
+//			emit hideSignal();
+//		}
+//	}
+//}
+

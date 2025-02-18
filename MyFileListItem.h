@@ -56,6 +56,11 @@ public:
 			emit checkChange(judge);
 		}
 	}
+	void deleteLater() {
+		if (grabArea && isChecked())
+			grabArea->removeItem(text().toStdWString(), MyPath);
+		QPushButton::deleteLater();
+	}
 
 protected:
 	void mousePressEvent(QMouseEvent* e) override;
@@ -75,6 +80,7 @@ signals:
 	void removeSelfSignal();
 	void moveSignal(QPoint);
 	void checkChange(bool);
+	void adjustSizeSignal();
 
 public slots:
 	void MenuClickedProc(QAction* action);

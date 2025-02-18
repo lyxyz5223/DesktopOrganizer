@@ -42,7 +42,7 @@ void MyFileListItem::initialize(QWidget* parent, QSize defaultSize, bool isShado
 		});
 	connect(this, &MyFileListItem::removeSelfSignal, this, &MyFileListItem::removeSelfSlot);
 	connect(this, &MyFileListItem::moveSignal, this, [=](QPoint pos) { move(pos); });
-
+	connect(this, &MyFileListItem::adjustSizeSignal, this, &MyFileListItem::adjustSize);
 }
 MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize) : QPushButton(parent)
 {
@@ -84,7 +84,7 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 	QPen pen;
 	p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);//抗锯齿
 	qreal xr, yr;
-	xr = yr = (size().width() > size().height() ? size().height() / 5 : size().width() / 5);
+	xr = yr = (size().width() > size().height() ? size().height() / 7 : size().width() / 7);
 	QRect qrect1;
 	qrect1 = this->rect();
 	//qrect1.setWidth(qrect1.width() - 1);
@@ -294,8 +294,14 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 			startPosOffset.setX(startPos.x() - grabArea->pos().x());
 			startPosOffset.setY(startPos.y() - grabArea->pos().y());
 			grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
-
 		}
+
+		QDrag* drag = new QDrag(this);
+		drag->setHotSpot(e->pos());
+		QImage dragImage(1, 1, QImage::Format_ARGB32);
+		dragImage.fill(QColor(255, 255, 255, 0));
+		drag->setPixmap(QPixmap::fromImage(dragImage));
+
 		if (isChecked())
 		{
 			//如果已经选中，则准备拖动事宜
@@ -311,12 +317,7 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 				}
 				QMimeData* mimeData = new QMimeData();
 				mimeData->setUrls(urls);
-				QDrag* drag = new QDrag(this);
 				drag->setMimeData(mimeData);
-				QImage dragImage(1, 1, QImage::Format_ARGB32);
-				dragImage.fill(QColor(255, 255, 255, 0));
-				drag->setPixmap(QPixmap::fromImage(dragImage));
-				drag->exec();
 			}
 		}
 		else
@@ -340,15 +341,10 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 				urls.push_back(url);
 				QMimeData* mimeData = new QMimeData();
 				mimeData->setUrls(urls);
-				QDrag* drag = new QDrag(this);
 				drag->setMimeData(mimeData);
-				//drag->setPixmap(QPixmap::fromImage(this->itemImage));
-				QImage dragImage(1, 1, QImage::Format_ARGB32);
-				dragImage.fill(QColor(255, 255, 255, 0));
-				drag->setPixmap(QPixmap::fromImage(dragImage));
-				drag->exec();
 			}
 		}
+		drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
 
 	}
 		break;

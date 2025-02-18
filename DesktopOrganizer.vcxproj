@@ -110,7 +110,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="fileProc.h" />
-    <ClInclude Include="GrabArea.h" />
+    <QtMoc Include="GrabArea.h" />
     <ClInclude Include="ItemProperty.h" />
     <ClInclude Include="lib\otlv4.h" />
     <QtMoc Include="MyFileListWidget.h" />

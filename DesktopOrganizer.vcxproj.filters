@@ -75,6 +75,9 @@
     <QtMoc Include="SelectionArea.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="GrabArea.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stringProcess.h">
@@ -84,9 +87,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="lib\otlv4.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="GrabArea.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ItemProperty.h">

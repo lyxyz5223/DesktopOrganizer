@@ -79,10 +79,11 @@ MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pa
 	this->pathsList = pathsList;
 	configFileNameWithPath = config;
 	grabArea->hide();
-	if (!readConfigFile(config))
+	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
+	changeItemSizeAndNumbersPerColumn();
+	if (!readConfigFileAndCreateItems(config))
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 	/*计算item大小和每列item的个数*/
-	changeItemSizeAndNumbersPerColumn();
 
 	connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
 
@@ -214,6 +215,16 @@ void MyFileListWidget::dragEnterEvent(QDragEnterEvent* e)
 {
 	if (e->mimeData()->hasFormat("text/uri-list"))
 		e->acceptProposedAction();
+	if (grabArea)
+	{
+		grabArea->show();
+		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
+		QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
+		// std::cout << pos.x() << "," << pos.y() << std::endl;
+
+		grabArea->move(pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(), pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y());
+	}
+
 }
 
 void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
@@ -233,6 +244,8 @@ void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 // 当不接受QDrag的drop事件时调用
 void MyFileListWidget::dragLeaveEvent(QDragLeaveEvent* e)
 {
+	if (grabArea)
+		grabArea->hide();
 
 }
 
@@ -292,7 +305,8 @@ std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, st
 			result[2] = *iter;
 	return result;
 }
-bool MyFileListWidget::readConfigFile(std::wstring nameWithPath)
+
+bool MyFileListWidget::readConfigFile(std::wstring nameWithPath, bool whetherToCreateItem)
 {
 	using namespace std;
 	fstream fConfig(nameWithPath, ios::app | ios::out);
@@ -337,11 +351,16 @@ bool MyFileListWidget::readConfigFile(std::wstring nameWithPath)
 					itemsMap[conf[1]+conf[0]] = {
 						0, conf[0], conf[1], stoll(conf[2])
 					};
+					createItem(conf[0], conf[1]);
 				}
 			}
 		}
 	}
 	return true;
+}
+bool MyFileListWidget::readConfigFileAndCreateItems(std::wstring nameWithPath)
+{
+	return readConfigFile(nameWithPath, true);
 }
 bool MyFileListWidget::writeConfigFile(std::wstring nameWithPath)
 {
@@ -429,8 +448,8 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 					tmpItemsMap.erase(nameWithPath);
 					if (!itemsMap[nameWithPath].item && !isCreatingItem && !isRemovingItem)
 					{
-						isCreatingItem = true;
-						emit createItemSignal(tmpwstringarray[0], path);
+						sendCreateItemSignal(tmpwstringarray[0], path);
+						while (isCreatingItem) Sleep(10);
 					}
 				}
 				else
@@ -439,8 +458,8 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 					// Send CreateItem Signal
 					if (!isCreatingItem && !isRemovingItem)
 					{
-						isCreatingItem = true;
-						emit createItemSignal(tmpwstringarray[0], path);
+						sendCreateItemSignal(tmpwstringarray[0], path);//isCreatingItem = true;已经写在函数内
+						while (isCreatingItem) Sleep(10);
 					}
 				}
 				FileIndex++;
@@ -456,11 +475,13 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		// Send RemoveItem Signal
 		for (auto i = tmpItemsMap.begin(); i != tmpItemsMap.end(); )
 		{
-			if (i->second.item != nullptr)
-			{
+			// 下面的注释因为：可能item并不存在而配置文件存在多余项需删除，
+			// 并且函数内有判断，所以此处不需要判断
+			//if (i->second.item != nullptr)
+			//{
 				sendRemoveItemSignal(i->second.name, i->second.path);
 				while (isRemovingItem) Sleep(10);
-			}
+			//}
 			tmpItemsMap.erase(i++);//////////////////////////////////////////
 		}
 		size_t npcBack = itemsNumPerColumn;
@@ -475,8 +496,12 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 				(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column,
 				(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line
 			);
-			if (i->second.item && itemPos != ((MyFileListItem*)i->second.item)->pos())
-				emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
+			if (i->second.item)
+			{
+				emit static_cast<MyFileListItem*>(i->second.item)->adjustSizeSignal();
+				if (itemPos != ((MyFileListItem*)i->second.item)->pos())
+					emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
+			}
 		}
 		Sleep(10);
 	}
@@ -490,6 +515,8 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		return;
 	std::wstring nameWithPath = path;
 	nameWithPath += name;
+	if (!itemsMap.count(nameWithPath))
+		itemsMap[nameWithPath] = ItemProp();
 	if (!itemsMap[nameWithPath].item)
 	{
 		/*新添加的item的图标*/
@@ -513,15 +540,25 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 			if (dw_ptr)
 				pLWItemImage = QImage::fromHICON(sfi.hIcon);
 		}
-
-		/*判断是否已经放置图标*/
-		std::wstring::size_type st = indexesState.find(L'0');
-		if (st == std::wstring::npos)
+		std::wstring::size_type st;
+		if (itemsMap[nameWithPath].position == -1)
 		{
-			st = indexesState.length();
-			indexesState += L'0';
+			/*判断是否已经放置图标*/
+			st = indexesState.find(L'0');
+			if (st == std::wstring::npos)
+			{
+				st = indexesState.length();
+				indexesState += L'0';
+			}
+			indexesState.replace(st, 1, L"1");
 		}
-		indexesState.replace(st, 1, L"1");
+		else
+		{
+			st = itemsMap[nameWithPath].position;
+			for (size_t i = indexesState.length(); i < st + 2; i++)
+				indexesState += L"0";
+			indexesState[st] = '1';
+		}
 		if (itemsNumPerColumn == 0)
 			itemsNumPerColumn = 1;
 		/*计算新添加的item的合适位置的index*/
@@ -569,14 +606,16 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 {
 	isRemovingItem = true;
 	while (isCreatingItem) Sleep(10);
-	if (itemsMap.count(path + name))
+	std::wstring nameWithPath = path + name;
+	if (itemsMap.count(nameWithPath))
 	{
-		void*& item = itemsMap[path + name].item;
+		void*& item = itemsMap[nameWithPath].item;
 		if (item)
 		{
 			static_cast<MyFileListItem*>(item)->deleteLater();
 			item = nullptr;
 		}
+		itemsMap.erase(nameWithPath);
 	}
 	writeConfigFile(configFileNameWithPath);
 	isRemovingItem = false;

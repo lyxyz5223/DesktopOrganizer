@@ -24,10 +24,11 @@ public:
 		viewMode = mode;
 	}
 	std::vector<std::wstring> splitForConfig(std::wstring text, std::wstring delimiter = L" "/*separator,分隔符*/, std::wstring EscapeString = L"" /*char EscapeCharacter*/);
-	bool readConfigFile(std::wstring nameWithPath);
 	void addPath(std::wstring path) {
 		pathsList.push_back(path);
 	}
+	bool readConfigFile(std::wstring nameWithPath, bool whetherToCreateItem = false);
+	bool readConfigFileAndCreateItems(std::wstring nameWithPath);
 	bool writeConfigFile(std::wstring nameWithPath);
 	void checkFilesChangeProc(std::wstring path);
 	void sendCreateItemSignal(std::wstring name, std::wstring path) {

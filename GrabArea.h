@@ -5,9 +5,12 @@
 #include <deque>
 #include <qdrag.h>
 #include "ItemProperty.h"
+#include <thread>
+#include <Windows.h>
 
 class GrabArea : public QWidget
 {
+	Q_OBJECT
 public:
 	~GrabArea() {}
 	GrabArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing);
@@ -58,8 +61,22 @@ public:
 	inline void setCursorPosOffsetWhenMousePress(QPoint CursorPosOffsetWhenMousePress) {
 		cursorPosOffsetWhenMousePress = CursorPosOffsetWhenMousePress;
 	}
+
+	LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
 protected:
 	void paintEvent(QPaintEvent* e);
+
+signals:
+	void moveSignal(QPoint);
+	void hideSignal();
+
+public slots:
+	void moveSlot(QPoint pos) {
+		move(pos);
+	}
+
+
+
 private:
 
 	std::unordered_map<std::wstring, ItemWithPosition> children_map;
@@ -78,5 +95,7 @@ private:
 	void ChangeGoalGeometry();
 
 	QPoint cursorPosOffsetWhenMousePress;
+
+	//void checkCursorPosChange();
 };
 
