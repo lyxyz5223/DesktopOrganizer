@@ -14,12 +14,18 @@ class MyFileListWidget : public QWidget
 	Q_OBJECT
 public:
 
-	~MyFileListWidget() {}
+	~MyFileListWidget() {
+		checkFilesChangeThreadExit = true;
+		for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
+			iter->join();
+	}
 	//MyFileListWidget(QWidget* parent = nullptr);
 	MyFileListWidget(QWidget* parent,
 		std::vector<std::wstring> pathsList,
 		std::wstring config);
-
+	void initialize(QWidget* parent,
+		std::vector<std::wstring> pathsList,
+		std::wstring config);
 	void setViewMode(MyFileListItem::ViewMode mode) {
 		viewMode = mode;
 	}
@@ -42,9 +48,12 @@ public:
 signals:
 	void createItemSignal(std::wstring name, std::wstring path);
 	void removeItemSignal(std::wstring name, std::wstring path);
+	
 public slots:
 	void createItem(std::wstring name, std::wstring path);
 	void removeItem(std::wstring name, std::wstring path);
+	void MenuClickedProc(QAction* action);
+	void refreshSelf();
 
 protected:
 	void paintEvent(QPaintEvent* e) override;
@@ -63,20 +72,20 @@ private:
 	std::vector<std::wstring> pathsList;// 文件路径列表
 	std::wstring indexesState = L"0";// 按列计算的索引状态，1表示已占用，0表示未占用
 	std::wstring configFileNameWithPath;
-	QFont itemFont;
+	//QFont itemFont;
 	Spacing itemSpacing = { 15, 15 };
+	QWidget* parent =  nullptr;// 父控件
 
 	//临时
-	int zoomScreen = 10;//item的高度是屏幕高度/宽度中小的那个的1/zoomScreen倍
+	const int zoomScreen = 10;//item的高度是屏幕高度/宽度中小的那个的1/zoomScreen倍
 	void changeItemSizeAndNumbersPerColumn();
 	bool isRemovingItem = false;
 	bool isCreatingItem = false;
 	QRect selectionRect;// 框选区域
-	SelectionArea* selectionArea = new SelectionArea(this);// 框选区域图形
+	SelectionArea* selectionArea = nullptr;// 框选区域图形
 	size_t itemsNumPerColumn = 0;
 	QSize itemSize;
-	GrabArea* grabArea = new GrabArea(this, itemsNumPerColumn, itemSize, itemSpacing);// 选中文件拖动区域
-
-
-
+	GrabArea* grabArea = nullptr;// 选中文件拖动区域
+	std::vector<std::thread> checkFilesChangeThreads;
+	bool checkFilesChangeThreadExit = false;
 };

@@ -4,13 +4,17 @@
 #include <algorithm>
 #include <iostream>
 #include <QUrl>
-
+#include <QScreen>
 
 extern bool PathCompletion(std::wstring& path);
 QPoint relativePosTransition(QWidget* from, QPoint fromPos, QWidget* to)
 {
-	auto fp = from->geometry().topLeft();
-	auto tp = to->geometry().topLeft();
+	if ((!from) && (!to))
+		return fromPos;
+	QPoint fp, tp;
+	fp = (from) ? from->geometry().topLeft() : to->screen()->availableGeometry().topLeft();
+	tp = (to) ? to->geometry().topLeft() : from->screen()->availableGeometry().topLeft();
+
 	//fromPos + fp - tp
 	return QPoint(
 		fromPos.x() + fp.x() - tp.x(),
@@ -34,17 +38,17 @@ GrabArea::GrabArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, 
 	itemSize(ItemSize),
 	itemSpacing(ItemSpacing)
 {
+	setWindowFlags(Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint | Qt::WindowTransparentForInput | Qt::Tool);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setAttribute(Qt::WA_AlwaysStackOnTop, true);
-	setWindowFlags(Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint | Qt::WindowTransparentForInput | Qt::Tool);
 	setAttribute(Qt::WA_TransparentForMouseEvents, true);
 	setAttribute(Qt::WA_InputMethodTransparent, true);
-
+	clearFocus();
 	setWindowOpacity(0.6);
 	parentWidget = parent;
 	QWidget::resize(0, 0);
 	QWidget::move(0, 0);
-	connect(this, &GrabArea::moveSignal, this, &GrabArea::moveSlot);
+	//connect(this, &GrabArea::moveSignal, this, &GrabArea::moveSlot);
 	connect(this, &GrabArea::hideSignal, this, &GrabArea::hide);
 	//std::thread threadCheckCursorPosChange(&GrabArea::checkCursorPosChange, this);
 	//threadCheckCursorPosChange.detach();
@@ -91,8 +95,9 @@ void GrabArea::removeItem(std::wstring name, std::wstring path)
 #endif // _DEBUG
 
 	}
+
 	ChangeGoalGeometry();
-	move(goalGeometry.topLeft());
+	moveRelative(goalGeometry.topLeft(), parentWidget, nullptr);
 	resize(goalGeometry.size());
 
 	for (auto iter = children_map.begin(); iter != children_map.end(); iter++)
@@ -117,10 +122,13 @@ void GrabArea::addItem(ItemProp ip)
 	item->setParent(this);
 	PathCompletion(ip.path);
 	std::wstring nameWithPath = ip.path + ip.name;
+	//QPoint tl = relativePosTransition(parentWidget, bak->geometry().topLeft(), nullptr);
+	QRect r = bak->geometry();
+	//r.moveTo(tl);
 	children_map[nameWithPath] = {
 		item,
 		ip,
-		bak->geometry()
+		r
 	};
 	children_keys.push_back(nameWithPath);
 
@@ -135,7 +143,7 @@ void GrabArea::addItem(ItemProp ip)
 	bool (*MinToMax)(int a, int b) = [](int a, int b) {
 		return a < b;
 		};
-	QRect r = bak->geometry();
+
 	leftMost.push_back(r.left());
 	std::sort(leftMost.begin(), leftMost.end(), MaxToMin);
 	topMost.push_back(r.top());
@@ -146,7 +154,7 @@ void GrabArea::addItem(ItemProp ip)
 	std::sort(bottomMost.begin(), bottomMost.end(), MinToMax);
 
 	ChangeGoalGeometry();
-	move(goalGeometry.topLeft());
+	moveRelative(goalGeometry.topLeft(), parentWidget, nullptr);
 	resize(goalGeometry.size());
 
 	//int xIndex = ip.position / itemsNumPerColumn + 1;
@@ -177,11 +185,11 @@ void GrabArea::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
 	//p.fillRect(rect(), QColor(255, 255, 255, 255));
-	//QPen pen;
-	//pen.setColor(QColor(0, 0, 0, 155));
-	//pen.setWidth(2);
-	//p.setPen(pen);
-	//p.drawRect(rect());
+	QPen pen;
+	pen.setColor(QColor(0, 0, 0, 155));
+	pen.setWidth(2);
+	p.setPen(pen);
+	p.drawRect(rect());
 	QWidget::paintEvent(e);
 }
 

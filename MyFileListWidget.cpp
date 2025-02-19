@@ -68,16 +68,20 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 	if (itemsNumPerColumn == 0)
 		itemsNumPerColumn = 1;
 }
-MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)// : QWidget(parent)
+void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)
 {
 	setAttribute(Qt::WA_TranslucentBackground, true);
-	setWindowFlags(Qt::FramelessWindowHint);
+	//setWindowFlags(Qt::FramelessWindowHint);
+	this->parent = parent;
 	SetParent((HWND)winId(), (HWND)parent->winId());
 	setMouseTracking(true);
 	installEventFilter(this);
 	setAcceptDrops(true);
 	this->pathsList = pathsList;
 	configFileNameWithPath = config;
+
+	selectionArea = new SelectionArea(this);
+	grabArea = new GrabArea(this, itemsNumPerColumn, itemSize, itemSpacing);
 	grabArea->hide();
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
@@ -85,14 +89,81 @@ MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pa
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 	/*计算item大小和每列item的个数*/
 
-	connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
+	disconnect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
+	disconnect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem);
 
-	connect(this, SIGNAL(removeItemSignal(std::wstring, std::wstring)), this, SLOT(removeItem(std::wstring, std::wstring)));
+	if (connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem))
+	{
+#ifdef _DEBUG
+		std::cout << "connect succeeded: connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem)\n";
+#endif // _DEBUG
+	}
+	if (connect(this, SIGNAL(removeItemSignal(std::wstring, std::wstring)), this, SLOT(removeItem(std::wstring, std::wstring))))
+	{
+#ifdef _DEBUG
+		std::cout << "connect succeeded: connect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem)\n";
+#endif // _DEBUG
+	}
+
 	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
 	{
-		std::thread checkFilesChangeThread(&MyFileListWidget::checkFilesChangeProc, this, *i);
-		checkFilesChangeThread.detach();
+		checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
 	}
+}
+
+MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)// : QWidget(parent)
+{
+	initialize(parent, pathsList, config);
+}
+
+
+void MyFileListWidget::refreshSelf()
+{
+	checkFilesChangeThreadExit = true;
+	for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
+	{
+		std::thread th;
+		th.swap(*iter);
+		if (th.joinable())
+			th.join();
+	}
+	checkFilesChangeThreadExit = false;
+	if (grabArea)
+	{
+		grabArea->deleteLater();
+		grabArea = nullptr;
+	}
+	if (selectionArea)
+	{
+		selectionArea->reset();
+		selectionArea->deleteLater();
+		selectionArea = nullptr;
+	}
+
+	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
+	{
+		if (iter->second.item)
+		{
+			//static_cast<MyFileListItem*>(iter->second.item)->hide();
+			static_cast<MyFileListItem*>(iter->second.item)->QPushButton::deleteLater();
+		}
+	}
+	itemSize = QSize();
+	itemsNumPerColumn = 0;
+	selectionRect = QRect();
+	isCreatingItem = false;
+	isRemovingItem = false;
+	indexesState = L"0";
+	itemsMap.clear();
+	initialize(parent, pathsList, configFileNameWithPath);
+}
+
+void MyFileListWidget::MenuClickedProc(QAction* action)
+{
+	if (action->text() == "刷新")
+		;
+	else if (action->text() == "傻逼")
+		;
 }
 
 void MyFileListWidget::mousePressEvent(QMouseEvent* e)
@@ -101,8 +172,17 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 	{
 	case Qt::MouseButton::LeftButton:
 	{
-		selectionArea->move(mapToParent(e->pos()));
-		selectionArea->reset();
+		if (selectionArea)
+		{
+			QPoint p = e->pos();// mapToParent(e->pos());
+			selectionRect = QRect(p.x(), p.y(), 0, 0);
+			selectionArea->reset();
+			selectionArea->raise();
+			selectionArea->show();
+			selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
+				(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
+			selectionArea->reset();
+		}
 		break;
 	}
 	case Qt::MouseButton::RightButton:
@@ -110,8 +190,13 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 		QMenu* menu1 = new QMenu(this);
 		menu1->addAction(QIcon(), "你好");
 		menu1->addAction(QIcon(), "傻逼");
-		menu1->addAction(QIcon(), "刷新");
+		//QAction* refresh = new QAction(menu1);
+		//refresh->setText("刷新");
+		menu1->addAction(QIcon(), "刷新", this, &MyFileListWidget::refreshSelf);
+		connect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
 		menu1->exec(QCursor::pos());
+		disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
+		menu1->deleteLater();
 		break;
 	}
 	default: 
@@ -125,8 +210,8 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 	{
 	case Qt::MouseButton::LeftButton:
 	{
-		selectionArea->hide();
-
+		if(selectionArea)
+			selectionArea->hide();
 	}
 		break;
 	default:
@@ -149,16 +234,18 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 {
 	if (e->buttons() & Qt::LeftButton)
 	{
-		QPoint p = mapToParent(e->pos());
-		selectionRect.setBottomRight(p);
-		selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
-			(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
-		selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
-			selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
-		selectionArea->update();
-		//std::cout << selectionRect.x() << "," << selectionRect.y()
-		//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
-
+		if (selectionArea)
+		{
+			QPoint p = e->pos();// mapToParent(e->pos());
+			selectionRect.setBottomRight(p);
+			selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
+				(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
+			selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
+				selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
+			selectionArea->update();
+			//std::cout << selectionRect.x() << "," << selectionRect.y()
+			//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
+		}
 	}
 
 }
@@ -176,13 +263,7 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 #ifdef _DEBUG
 			std::cout << "leftButtonPress" << std::endl;
 #endif // _DEBUG
-			QPoint p = mapToParent(e->pos());
-			selectionRect = QRect(p.x(), p.y(), 0, 0);
-			selectionArea->reset();
-			selectionArea->raise();
-			selectionArea->show();
-			selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
-				(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
+
 			break;
 		}
 		default:
@@ -217,12 +298,18 @@ void MyFileListWidget::dragEnterEvent(QDragEnterEvent* e)
 		e->acceptProposedAction();
 	if (grabArea)
 	{
-		grabArea->show();
 		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
 		QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
 		// std::cout << pos.x() << "," << pos.y() << std::endl;
 
-		grabArea->move(pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(), pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y());
+		grabArea->moveRelative(
+			QPoint(
+				pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(),
+				pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y()
+				),
+			nullptr, this
+			);
+		grabArea->show();
 	}
 
 }
@@ -233,10 +320,18 @@ void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 	{
 		grabArea->show();
 		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
-		QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
+		//QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
+		QCursor cur;
+		QPoint pos(cur.pos());
 		// std::cout << pos.x() << "," << pos.y() << std::endl;
 
-		grabArea->move(pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(), pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y());
+		grabArea->moveRelative(
+			QPoint(
+				pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(),
+				pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y()
+			),
+			this, nullptr
+		);
 	}
 
 }
@@ -399,7 +494,7 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 	using namespace std;
 	WCHAR* cFilePath;
 	cFilePath = (WCHAR*)path.c_str();
-	while (true)
+	while (!checkFilesChangeThreadExit)
 	{
 		intptr_t FileIndex = 0;
 		WIN32_FIND_DATA ffd;
@@ -498,7 +593,8 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 			);
 			if (i->second.item)
 			{
-				emit static_cast<MyFileListItem*>(i->second.item)->adjustSizeSignal();
+				if (static_cast<MyFileListItem*>(i->second.item)->size() != itemSize)
+					emit static_cast<MyFileListItem*>(i->second.item)->adjustSizeSignal();
 				if (itemPos != ((MyFileListItem*)i->second.item)->pos())
 					emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
 			}
@@ -620,6 +716,7 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 	writeConfigFile(configFileNameWithPath);
 	isRemovingItem = false;
 }
+
 
 //void MyFileListWidget::threadReadDirectoryChangesProc(std::wstring path)
 //{

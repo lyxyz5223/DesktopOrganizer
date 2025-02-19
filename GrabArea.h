@@ -7,6 +7,10 @@
 #include "ItemProperty.h"
 #include <thread>
 #include <Windows.h>
+#include <iostream>
+
+QPoint relativePosTransition(QWidget* from, QPoint fromPos, QWidget* to);
+QPoint relativePosTransition(QRect from, QPoint fromPos, QRect to);
 
 class GrabArea : public QWidget
 {
@@ -36,8 +40,24 @@ public:
 		//resize(goalGeometry.size());
 		QWidget::show();
 	}
+	[[deprecated]] void move(QPoint pos) {
+		QWidget::move(pos);
+	}
+	[[deprecated]] void move(int x, int y) {
+		// move(QPoint(x, y));
+	}
+	void moveRelative(QPoint pos, QWidget* from, QWidget* to) {
+		pos = relativePosTransition(from, pos, to); // 相对坐标-->绝对坐标
+		QWidget::move(pos);
+	}
+	void moveAbsolute(QPoint pos) {
+		QWidget::move(pos);
+	}
+	void correctPosition() {
+		moveRelative(goalGeometry.topLeft(), parentWidget, nullptr);
+	}
+
 	void hide() {
-		move(goalGeometry.topLeft());
 		QWidget::hide();
 	}
 
@@ -62,18 +82,17 @@ public:
 		cursorPosOffsetWhenMousePress = CursorPosOffsetWhenMousePress;
 	}
 
-	LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
+
 protected:
 	void paintEvent(QPaintEvent* e);
 
 signals:
-	void moveSignal(QPoint);
 	void hideSignal();
 
 public slots:
-	void moveSlot(QPoint pos) {
-		move(pos);
-	}
+	//void moveSlot(QPoint pos) {
+	//	move(pos);
+	//}
 
 
 

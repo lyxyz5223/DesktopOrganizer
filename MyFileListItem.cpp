@@ -276,6 +276,8 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 		menu1->addAction(QIcon(), "删除");
 		connect(menu1, SIGNAL(triggered(QAction*)), this, SLOT(MenuClickedProc(QAction*)));
 		menu1->exec(QCursor::pos());
+		disconnect(menu1, SIGNAL(triggered(QAction*)), this, SLOT(MenuClickedProc(QAction*)));
+
 		break;
 	}
 	case Qt::MouseButton::LeftButton:
@@ -287,26 +289,27 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 		//QPoint p = mapToParent(e->pos());
 		//selectionArea->move(p);
 		//selectionArea->reset();
-		if (grabArea)
-		{
-			QCursor cursor;
-			QPoint startPos = cursor.pos();
-			startPosOffset.setX(startPos.x() - grabArea->pos().x());
-			startPosOffset.setY(startPos.y() - grabArea->pos().y());
-			grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
-		}
+		QCursor cursor;
+		QPoint startPos = cursor.pos();
 
-		QDrag* drag = new QDrag(this);
+		drag = new QDrag(this);
 		drag->setHotSpot(e->pos());
 		QImage dragImage(1, 1, QImage::Format_ARGB32);
 		dragImage.fill(QColor(255, 255, 255, 0));
 		drag->setPixmap(QPixmap::fromImage(dragImage));
+
 
 		if (isChecked())
 		{
 			//如果已经选中，则准备拖动事宜
 			if (grabArea)
 			{
+				grabArea->correctPosition();
+				QPoint leftTop = relativePosTransition(nullptr, grabArea->pos(), parentWidget());
+				startPosOffset.setX(startPos.x() - leftTop.x());
+				startPosOffset.setY(startPos.y() - leftTop.y());
+				grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
+
 				//	grabArea->show();
 				QList<QUrl> urls;
 				const auto sels = grabArea->getSelectedItemsKeys();
@@ -330,10 +333,15 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 			}
 			if (grabArea)
 			{
-				QCursor cursor;
-				QPoint startPos = cursor.pos();
 				startPosOffset.setX(startPos.x() - pos().x() + grabArea->getItemSpacing().column);
 				startPosOffset.setY(startPos.y() - pos().y() + grabArea->getItemSpacing().line);
+				grabArea->moveRelative(
+					QPoint(
+						pos().x() - grabArea->getItemSpacing().column,
+						pos().y() - grabArea->getItemSpacing().line
+					),
+					parentWidget(), nullptr
+					);
 				grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
 
 				QList<QUrl> urls;
@@ -344,7 +352,7 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 				drag->setMimeData(mimeData);
 			}
 		}
-		drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
+		//drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
 
 	}
 		break;
@@ -363,14 +371,9 @@ void MyFileListItem::mouseMoveEvent(QMouseEvent* e)
 		//	//std::cout << pos.x() << "," << pos.y() << std::endl;
 		//	shadowItem->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
 		//}
-		if (grabArea)
-		{
-			grabArea->show();
-			QPoint pos(e->globalPosition().x(), e->globalPosition().y());
-			//QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
-			// std::cout << pos.x() << "," << pos.y() << std::endl;
-			grabArea->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
-		}
+		if (drag)
+			drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
+
 	}
 }
 void MyFileListItem::dragMoveEvent(QDragMoveEvent* e)

@@ -104,6 +104,7 @@ private:
 	bool isShadowItem = false;
 	SelectionArea* selectionArea = nullptr;// 选择区域
 	GrabArea* grabArea = nullptr;
+	QDrag* drag = nullptr;
 };
 
 
