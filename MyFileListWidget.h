@@ -2,7 +2,7 @@
 #include <qwidget.h>
 #include "MyFileListItem.h"
 #include "SelectionArea.h"
-#include "GrabArea.h"
+#include "DragArea.h"
 
 #include <map>
 #include <unordered_map>
@@ -54,6 +54,11 @@ public slots:
 	void removeItem(std::wstring name, std::wstring path);
 	void MenuClickedProc(QAction* action);
 	void refreshSelf();
+	void openCMD(std::wstring path);
+	void openPowerShell(std::wstring path);
+	void pasteProc() {}
+	void cutProc() {}
+	void copyProc() {}
 
 protected:
 	void paintEvent(QPaintEvent* e) override;
@@ -76,6 +81,22 @@ private:
 	Spacing itemSpacing = { 15, 15 };
 	QWidget* parent =  nullptr;// 父控件
 
+	QIcon iconRefresh = QIcon(":/DesktopOrganizer/img/iconoir--refresh.svg");
+	QIcon iconCMD = QIcon(":/DesktopOrganizer/img/terminal.ico");
+	QIcon iconPaste = QIcon(":/DesktopOrganizer/img/tabler--clipboard.svg");
+	QIcon iconCopy = QIcon(":/DesktopOrganizer/img/tabler--copy.svg");
+	QIcon iconCut = QIcon(":/DesktopOrganizer/img/tabler--cut.svg");
+	QIcon iconMore = QIcon(":/DesktopOrganizer/img/tabler--dots-vertical.svg");
+	QIcon iconPlus = QIcon(":/DesktopOrganizer/img/tabler--plus.svg");
+	QIcon iconSquarePlus = QIcon(":/DesktopOrganizer/img/tabler--square-plus.svg");
+	QIcon iconSquareRoundedPlus = QIcon(":/DesktopOrganizer/img/tabler--square-rounded-plus.svg");
+	QIcon iconCirclePlus = QIcon(":/DesktopOrganizer/img/tabler--circle-plus.svg");
+	QIcon& iconAdd = iconPlus;
+	QIcon& iconSquareAdd = iconSquarePlus;
+	QIcon& iconSquareRoundedAdd = iconSquareRoundedPlus;
+	QIcon& iconCircleAdd = iconCirclePlus;
+	QIcon iconFolder;
+	QIcon iconLink;
 	//临时
 	const int zoomScreen = 10;//item的高度是屏幕高度/宽度中小的那个的1/zoomScreen倍
 	void changeItemSizeAndNumbersPerColumn();
@@ -85,7 +106,7 @@ private:
 	SelectionArea* selectionArea = nullptr;// 框选区域图形
 	size_t itemsNumPerColumn = 0;
 	QSize itemSize;
-	GrabArea* grabArea = nullptr;// 选中文件拖动区域
+	DragArea* dragArea = nullptr;// 选中文件拖动区域
 	std::vector<std::thread> checkFilesChangeThreads;
 	bool checkFilesChangeThreadExit = false;
 };

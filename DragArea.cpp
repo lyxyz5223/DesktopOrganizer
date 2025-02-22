@@ -1,4 +1,4 @@
-#include "GrabArea.h"
+#include "DragArea.h"
 #include "MyFileListItem.h"
 #include <qpainter.h>
 #include <algorithm>
@@ -32,7 +32,7 @@ QPoint relativePosTransition(QRect from, QPoint fromPos, QRect to)
 	);
 }
 
-GrabArea::GrabArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing)
+DragArea::DragArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing)
 	: QWidget(nullptr),
 	itemsNumPerColumn(ItemsNumPerColumn),
 	itemSize(ItemSize),
@@ -48,14 +48,14 @@ GrabArea::GrabArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, 
 	parentWidget = parent;
 	QWidget::resize(0, 0);
 	QWidget::move(0, 0);
-	//connect(this, &GrabArea::moveSignal, this, &GrabArea::moveSlot);
-	connect(this, &GrabArea::hideSignal, this, &GrabArea::hide);
-	//std::thread threadCheckCursorPosChange(&GrabArea::checkCursorPosChange, this);
+	//connect(this, &DragArea::moveSignal, this, &DragArea::moveSlot);
+	connect(this, &DragArea::hideSignal, this, &DragArea::hide);
+	//std::thread threadCheckCursorPosChange(&DragArea::checkCursorPosChange, this);
 	//threadCheckCursorPosChange.detach();
 }
 
 
-void GrabArea::removeItem(std::wstring name, std::wstring path)
+void DragArea::removeItem(std::wstring name, std::wstring path)
 {
 	PathCompletion(path);
 	std::wstring nameWithPath = path + name;
@@ -91,7 +91,7 @@ void GrabArea::removeItem(std::wstring name, std::wstring path)
 		p = nullptr;
 		children_map.erase(nameWithPath);
 #ifdef _DEBUG
-		std::cout << "GrabArea: removeItem, current item numbers:" << children_map.size() << std::endl;
+		std::cout << "DragArea: removeItem, current item numbers:" << children_map.size() << std::endl;
 #endif // _DEBUG
 
 	}
@@ -115,7 +115,7 @@ void GrabArea::removeItem(std::wstring name, std::wstring path)
 
 }
 
-void GrabArea::addItem(ItemProp ip)
+void DragArea::addItem(ItemProp ip)
 {
 	MyFileListItem* bak = static_cast<MyFileListItem*>(ip.item);
 	MyFileListItem* item = new MyFileListItem(*bak, true);
@@ -133,7 +133,7 @@ void GrabArea::addItem(ItemProp ip)
 	children_keys.push_back(nameWithPath);
 
 #ifdef _DEBUG
-	std::cout << "GrabArea: addItem, current item numbers:" << children_map.size() << std::endl;
+	std::cout << "DragArea: addItem, current item numbers:" << children_map.size() << std::endl;
 #endif // _DEBUG
 
 
@@ -181,7 +181,7 @@ void GrabArea::addItem(ItemProp ip)
 	}
 }
 
-void GrabArea::paintEvent(QPaintEvent* e)
+void DragArea::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
 	//p.fillRect(rect(), QColor(255, 255, 255, 255));
@@ -193,7 +193,7 @@ void GrabArea::paintEvent(QPaintEvent* e)
 	QWidget::paintEvent(e);
 }
 
-void GrabArea::ChangeGoalGeometry()
+void DragArea::ChangeGoalGeometry()
 {
 	if (leftMost.empty() || topMost.empty() || rightMost.empty() || bottomMost.empty())
 		leftMost = rightMost = topMost = bottomMost = std::vector<int>();
@@ -205,7 +205,7 @@ void GrabArea::ChangeGoalGeometry()
 }
 
 
-//void GrabArea::checkCursorPosChange()
+//void DragArea::checkCursorPosChange()
 //{
 //	while (true)
 //	{

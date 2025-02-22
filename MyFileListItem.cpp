@@ -302,17 +302,17 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 		if (isChecked())
 		{
 			//如果已经选中，则准备拖动事宜
-			if (grabArea)
+			if (dragArea)
 			{
-				grabArea->correctPosition();
-				QPoint leftTop = relativePosTransition(nullptr, grabArea->pos(), parentWidget());
+				dragArea->correctPosition();
+				QPoint leftTop = relativePosTransition(nullptr, dragArea->pos(), parentWidget());
 				startPosOffset.setX(startPos.x() - leftTop.x());
 				startPosOffset.setY(startPos.y() - leftTop.y());
-				grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
+				dragArea->setCursorPosOffsetWhenMousePress(startPosOffset);
 
-				//	grabArea->show();
+				//	dragArea->show();
 				QList<QUrl> urls;
-				const auto sels = grabArea->getSelectedItemsKeys();
+				const auto sels = dragArea->getSelectedItemsKeys();
 				for (auto iter = sels.begin(); iter != sels.end(); iter++)
 				{
 					QUrl url = QUrl::fromLocalFile(QString::fromStdWString(*iter));
@@ -331,18 +331,18 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 				selectionArea->move(mapToParent(e->pos()));
 				selectionArea->reset();
 			}
-			if (grabArea)
+			if (dragArea)
 			{
-				startPosOffset.setX(startPos.x() - pos().x() + grabArea->getItemSpacing().column);
-				startPosOffset.setY(startPos.y() - pos().y() + grabArea->getItemSpacing().line);
-				grabArea->moveRelative(
+				startPosOffset.setX(startPos.x() - pos().x() + dragArea->getItemSpacing().column);
+				startPosOffset.setY(startPos.y() - pos().y() + dragArea->getItemSpacing().line);
+				dragArea->moveRelative(
 					QPoint(
-						pos().x() - grabArea->getItemSpacing().column,
-						pos().y() - grabArea->getItemSpacing().line
+						pos().x() - dragArea->getItemSpacing().column,
+						pos().y() - dragArea->getItemSpacing().line
 					),
 					parentWidget(), nullptr
 					);
-				grabArea->setCursorPosOffsetWhenMousePress(startPosOffset);
+				dragArea->setCursorPosOffsetWhenMousePress(startPosOffset);
 
 				QList<QUrl> urls;
 				QUrl url = QUrl::fromLocalFile(QString::fromStdWString(this->MyPath) + this->text());
@@ -390,8 +390,8 @@ void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
 	{
 	case Qt::MouseButton::LeftButton:
 	{
-		if(grabArea)
-			grabArea->hide();
+		if(dragArea)
+			dragArea->hide();
 	}
 		break;
 	default:

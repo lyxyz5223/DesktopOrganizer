@@ -1,4 +1,6 @@
-//有关id的内容觉得没用，于是全都删掉了
+//右键菜单，新建的列表项内容：
+//注册表：计算机\HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Discardable\PostSetup\ShellNew
+
 #define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING
 //Windows
 #include <Windows.h>
@@ -9,6 +11,8 @@
 #include <atlbase.h>
 #include <atlcore.h>
 #include <atlcom.h>
+// GetIcon
+#pragma comment(lib, "Comctl32.lib")
 
 //Qt
 #include "MyFileListWidget.h"
@@ -18,6 +22,9 @@
 #include <qmessagebox.h>
 #include <qdrag.h>
 #include <qmimedata.h>
+#include "MyMenuAction.h"
+#include "MyMenu.h"
+#include <QSettings>
 
 //C++
 #include <fstream>
@@ -38,8 +45,8 @@
 //My Lib
 #include "fileProc.h"
 //声明&定义
-
-
+#define HKEY_CLASSES_ROOT_STR "HKEY_CLASSES_ROOT"
+#define HKEY_CURRENT_USER_ShellNew_STR "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Discardable\\PostSetup\\ShellNew"
 bool isDigits(std::wstring wstr)
 {
 	for (wchar_t ch : wstr)
@@ -70,28 +77,92 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 }
 void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)
 {
-	setAttribute(Qt::WA_TranslucentBackground, true);
-	//setWindowFlags(Qt::FramelessWindowHint);
-	this->parent = parent;
-	SetParent((HWND)winId(), (HWND)parent->winId());
-	setMouseTracking(true);
-	installEventFilter(this);
-	setAcceptDrops(true);
 	this->pathsList = pathsList;
 	configFileNameWithPath = config;
 
 	selectionArea = new SelectionArea(this);
-	grabArea = new GrabArea(this, itemsNumPerColumn, itemSize, itemSpacing);
-	grabArea->hide();
+	dragArea = new DragArea(this, itemsNumPerColumn, itemSize, itemSpacing);
+	dragArea->hide();
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
 	if (!readConfigFileAndCreateItems(config))
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 	/*计算item大小和每列item的个数*/
 
+
+	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
+		checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
+}
+
+MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)// : QWidget(parent)
+{
+	setAttribute(Qt::WA_TranslucentBackground, true);
+	setWindowFlags(Qt::FramelessWindowHint);
+	this->parent = parent;
+	SetParent((HWND)winId(), (HWND)parent->winId());
+	//setParent(parent);
+	setMouseTracking(true);
+	installEventFilter(this);
+	setAcceptDrops(true);
+
+	// 获取cmd图标
+	WCHAR* sysPath = new WCHAR[MAX_PATH];//系统路径
+	UINT sysPathLen = GetSystemDirectory(sysPath, MAX_PATH);
+	if (sysPathLen > MAX_PATH)
+	{
+		//err: buffer is too small
+	}
+	else//cmd图标
+	{
+		// 1
+		//std::wstring cmdPath = sysPath;
+		//PathCompletion(cmdPath);
+		//cmdPath += L"cmd.exe";
+		//SHFILEINFO sfi;
+		//DWORD_PTR dw_ptr = SHGetFileInfo(cmdPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
+		//if (dw_ptr)
+		//	iconCMD = QIcon(QPixmap::fromImage(QImage::fromHICON(sfi.hIcon)));
+
+		// 2
+		//HMODULE hShell32 = LoadLibrary(L"shell32.dll");
+		//typedef BOOL(WINAPI* ShellGetImageLists)(HIMAGELIST* phLarge, HIMAGELIST* phSmall);
+		//typedef BOOL(WINAPI* FileIconInit)   (BOOL fFullInit);
+		//ShellGetImageLists ShellGetImageListsProc = (ShellGetImageLists)GetProcAddress(hShell32, (LPCSTR)71);
+		//FileIconInit FileIconInitProc = (FileIconInit)GetProcAddress(hShell32, (LPCSTR)660);
+		//if (FileIconInitProc != 0)
+		//	FileIconInitProc(TRUE);
+		//// 获得大图标和小图标的系统图像列表句柄
+		//HIMAGELIST phLarge;
+		//HIMAGELIST phSmall;
+		//ShellGetImageListsProc(&phLarge, &phSmall);
+		//HICON hicon = ImageList_GetIcon(phSmall, 10, ILD_NORMAL);
+		//iconCMD = QIcon(QPixmap::fromImage(QImage::fromHICON(hicon)));
+
+		// 3 与2相同
+		//SHSTOCKICONINFO info{};
+		//info.cbSize = sizeof(SHSTOCKICONINFO);
+		//HRESULT hr = SHGetStockIconInfo(SIID_SHIELD, SHGSI_ICON | SHGSI_LARGEICON, &info);
+		//iconCMD = QIcon(QPixmap::fromImage(QImage::fromHICON(info.hIcon)));
+
+		// 4
+		//iconCMD.addFile(":/DesktopOrganizer/img/terminal.ico");
+	}
+
+	{
+		SHSTOCKICONINFO iconInfo{};
+		iconInfo.cbSize = sizeof(SHSTOCKICONINFO);
+		HRESULT hr = SHGetStockIconInfo(SIID_FOLDER, SHGSI_ICON | SHGSI_LARGEICON, &iconInfo);
+		iconFolder = QIcon(QPixmap::fromImage(QImage::fromHICON(iconInfo.hIcon)));
+	}
+	{
+		SHSTOCKICONINFO iconInfo{};
+		iconInfo.cbSize = sizeof(SHSTOCKICONINFO);
+		HRESULT hr = SHGetStockIconInfo(SIID_LINK, SHGSI_ICON | SHGSI_LARGEICON, &iconInfo);
+		QImage imageLink = QImage::fromHICON(iconInfo.hIcon);
+		iconLink = QIcon(QPixmap::fromImage(imageLink.copy(0, imageLink.height() * 3 / 5, imageLink.height() * 2 / 5, imageLink.width() * 2 / 5)));
+	}
 	disconnect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
 	disconnect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem);
-
 	if (connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem))
 	{
 #ifdef _DEBUG
@@ -105,14 +176,6 @@ void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pat
 #endif // _DEBUG
 	}
 
-	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
-	{
-		checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
-	}
-}
-
-MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)// : QWidget(parent)
-{
 	initialize(parent, pathsList, config);
 }
 
@@ -128,10 +191,10 @@ void MyFileListWidget::refreshSelf()
 			th.join();
 	}
 	checkFilesChangeThreadExit = false;
-	if (grabArea)
+	if (dragArea)
 	{
-		grabArea->deleteLater();
-		grabArea = nullptr;
+		dragArea->deleteLater();
+		dragArea = nullptr;
 	}
 	if (selectionArea)
 	{
@@ -141,13 +204,8 @@ void MyFileListWidget::refreshSelf()
 	}
 
 	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
-	{
 		if (iter->second.item)
-		{
-			//static_cast<MyFileListItem*>(iter->second.item)->hide();
 			static_cast<MyFileListItem*>(iter->second.item)->QPushButton::deleteLater();
-		}
-	}
 	itemSize = QSize();
 	itemsNumPerColumn = 0;
 	selectionRect = QRect();
@@ -158,12 +216,28 @@ void MyFileListWidget::refreshSelf()
 	initialize(parent, pathsList, configFileNameWithPath);
 }
 
+void MyFileListWidget::openCMD(std::wstring path)
+{
+	PathCompletion(path);
+#ifdef _DEBUG
+	std::cout << "Open cmd" << (path == L"" ? " " : ": ") << UTF8ToANSI(wstr2str_2UTF8(path)) << std::endl;
+#endif // _DEBUG
+	ShellExecute(0, L"open", L"cmd.exe", ((path == L"") ? path : (std::wstring(L"/s /k pushd \"") + path + L"\"")).c_str(), 0, SW_NORMAL);
+
+}
+void MyFileListWidget::openPowerShell(std::wstring path)
+{
+	PathCompletion(path);
+#ifdef _DEBUG
+	std::cout << "Open PowerShell" << (path == L"" ? " " : ": ") << UTF8ToANSI(wstr2str_2UTF8(path)) << std::endl;
+#endif // _DEBUG
+	ShellExecute(0, L"open", L"powershell.exe", ((path == L"") ? path : (std::wstring(L"-noexit -command Set-Location -literalPath \"") + path + L"\"")).c_str(), 0, SW_NORMAL);
+
+}
+
 void MyFileListWidget::MenuClickedProc(QAction* action)
 {
-	if (action->text() == "刷新")
-		;
-	else if (action->text() == "傻逼")
-		;
+	if (action->text() == "刷新");
 }
 
 void MyFileListWidget::mousePressEvent(QMouseEvent* e)
@@ -187,16 +261,6 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 	}
 	case Qt::MouseButton::RightButton:
 	{
-		QMenu* menu1 = new QMenu(this);
-		menu1->addAction(QIcon(), "你好");
-		menu1->addAction(QIcon(), "傻逼");
-		//QAction* refresh = new QAction(menu1);
-		//refresh->setText("刷新");
-		menu1->addAction(QIcon(), "刷新", this, &MyFileListWidget::refreshSelf);
-		connect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
-		menu1->exec(QCursor::pos());
-		disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
-		menu1->deleteLater();
 		break;
 	}
 	default: 
@@ -212,6 +276,101 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 	{
 		if(selectionArea)
 			selectionArea->hide();
+	}
+		break;
+	case Qt::MouseButton::RightButton:
+	{
+		//创建菜单
+		MyMenu* menu1 = new MyMenu(this);
+		MyMenuAction* actionRefresh = new MyMenuAction(iconRefresh, "刷新\tE");
+		connect(actionRefresh, &MyMenuAction::triggered, this, &MyFileListWidget::refreshSelf);
+		MyMenuAction* pasteAction = new MyMenuAction(iconPaste, "粘贴\tP");
+		connect(pasteAction, &MyMenuAction::triggered, this, &MyFileListWidget::pasteProc);
+		MyMenuAction* newFileOrFolderAction = new MyMenuAction(iconCirclePlus, "新建\tW");
+
+		//二级菜单
+		MyMenu* newOptions = new MyMenu(this);
+		newOptions->addAction(iconFolder, "文件夹");
+		newOptions->addAction(iconLink, "快捷方式");
+		newFileOrFolderAction->setMenu(newOptions);
+		newOptions->addSeparator();
+		//newOptions->addAction("txt文本文档");
+		//获取右键新建文件子菜单列表项
+		QSettings shellNewContents(HKEY_CURRENT_USER_ShellNew_STR, QSettings::NativeFormat);
+		QVariant v = shellNewContents.value("Classes");
+		if (v.typeId() == QMetaType::QStringList)
+		{
+			QStringList vl = v.toStringList();
+			vl.insert(0, ".txt");
+			std::cout << UTF8ToANSI("新建一栏扩展名：");
+			for (qsizetype i = 0; i < vl.size(); i++)
+			{
+				std::cout << vl[i].toStdString() << " ";
+
+				std::wstring extension = vl[i].toStdWString();
+				if (extension == L".library-ms" || extension == L".lnk"/* || extension == L"Folder"*/)
+					continue;
+				if (extension.length() > 0)
+				{
+					SHFILEINFO info;
+					if (SHGetFileInfo(extension.c_str(), FILE_ATTRIBUTE_NORMAL, &info, sizeof(info), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES | SHGFI_ICON))
+					{
+						std::wstring type = info.szTypeName;
+						QIcon icon = QPixmap::fromImage(QImage::fromHICON(info.hIcon));
+						newOptions->addAction(icon, QString::fromStdWString(type));
+					}
+				}
+
+				// 注册表法通过文件后缀获取文件类型描述
+				//QSettings filePathAtRegister(QString(HKEY_CLASSES_ROOT_STR) + "\\" + vl[i], QSettings::NativeFormat);
+				//QVariant fn = filePathAtRegister.value(".", true);
+				//if (fn.typeId() == QMetaType::Bool && fn.toBool())
+				//	continue;
+				//QSettings fileDescription(QString(HKEY_CLASSES_ROOT_STR) + "\\" + fn.toString(), QSettings::NativeFormat);
+				//fn = fileDescription.value(".", true);
+				//if (fn.typeId() == QMetaType::Bool && fn.toBool())
+				//	continue;
+				//QString fileDescriptionText = fn.toString();
+				//newOptions->addAction(fileDescriptionText);
+			}
+			std::cout << std::endl;
+		}
+
+
+		MyMenuAction* displayAllAction = new MyMenuAction("显示全部选项");
+
+
+		// 菜单添加列表项
+		menu1->addAction(actionRefresh);
+		menu1->addSeparator();
+		//menu1->addAction(iconCMD, "打开cmd\n    - 程序运行的工作路径\tO", this, [=]() { MyFileListWidget::openCMD(L""); });
+		//for (std::wstring path : pathsList)
+		//{
+		//	MyMenuAction* openCMDAction = new MyMenuAction();
+		//	openCMDAction->setText(QString("打开cmd\n    - ") + QString::fromStdWString(path));
+		//	openCMDAction->setIcon(iconCMD);
+		//	connect(openCMDAction, &MyMenuAction::triggered, this, [=]() { MyFileListWidget::openCMD(path); });
+		//	menu1->addAction(openCMDAction);
+		//}
+		MyMenuAction* cmdAction = new MyMenuAction(iconCMD, "打开cmd");
+		MyMenu* cmdListMenu = new MyMenu();
+		cmdListMenu->addAction("程序运行的工作路径", this, [=]() { MyFileListWidget::openCMD(L""); });
+		for (std::wstring path : pathsList)
+			cmdListMenu->addAction(QString::fromStdWString(path), this, [=]() { MyFileListWidget::openCMD(path); });
+		cmdAction->setMenu(cmdListMenu);
+		menu1->addAction(cmdAction);
+
+		menu1->addSeparator();
+		menu1->addAction(pasteAction);
+		menu1->addSeparator();
+		menu1->addAction(newFileOrFolderAction);
+		menu1->addSeparator();
+		menu1->addAction(displayAllAction);// 添加二级菜单
+
+		connect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
+		menu1->exec(QCursor::pos());
+		disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
+		menu1->deleteLater();
 	}
 		break;
 	default:
@@ -296,39 +455,39 @@ void MyFileListWidget::dragEnterEvent(QDragEnterEvent* e)
 {
 	if (e->mimeData()->hasFormat("text/uri-list"))
 		e->acceptProposedAction();
-	if (grabArea)
+	if (dragArea)
 	{
 		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
 		QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
 		// std::cout << pos.x() << "," << pos.y() << std::endl;
 
-		grabArea->moveRelative(
+		dragArea->moveRelative(
 			QPoint(
-				pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(),
-				pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y()
+				pos.x() - dragArea->getCursorPosOffsetWhenMousePress().x(),
+				pos.y() - dragArea->getCursorPosOffsetWhenMousePress().y()
 				),
 			nullptr, this
 			);
-		grabArea->show();
+		dragArea->show();
 	}
 
 }
 
 void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 {
-	if (grabArea)
+	if (dragArea)
 	{
-		grabArea->show();
+		dragArea->show();
 		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
 		//QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
 		QCursor cur;
 		QPoint pos(cur.pos());
 		// std::cout << pos.x() << "," << pos.y() << std::endl;
 
-		grabArea->moveRelative(
+		dragArea->moveRelative(
 			QPoint(
-				pos.x() - grabArea->getCursorPosOffsetWhenMousePress().x(),
-				pos.y() - grabArea->getCursorPosOffsetWhenMousePress().y()
+				pos.x() - dragArea->getCursorPosOffsetWhenMousePress().x(),
+				pos.y() - dragArea->getCursorPosOffsetWhenMousePress().y()
 			),
 			this, nullptr
 		);
@@ -339,16 +498,16 @@ void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 // 当不接受QDrag的drop事件时调用
 void MyFileListWidget::dragLeaveEvent(QDragLeaveEvent* e)
 {
-	if (grabArea)
-		grabArea->hide();
+	if (dragArea)
+		dragArea->hide();
 
 }
 
 // 接受QDrag的drop时调用
 void MyFileListWidget::dropEvent(QDropEvent* e)
 {
-	if(grabArea)
-		grabArea->hide();
+	if(dragArea)
+		dragArea->hide();
 }
 
 std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, std::wstring delimiter/*separator,分隔符*/, std::wstring EscapeString /*char EscapeCharacter*/)
@@ -667,7 +826,7 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		pLWItem->setPath(path);
 		pLWItem->setImage(pLWItemImage);
 		pLWItem->setSelectionArea(selectionArea);
-		pLWItem->setGrabArea(grabArea);
+		pLWItem->setGrabArea(dragArea);
 		//pLWItem->adjustSize();
 		QPoint itemPos = QPoint(
 			(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column, 
@@ -681,11 +840,13 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 			if (checkState)
 			{
 				ItemProp ip = itemsMap[path + name];
-				grabArea->addItem(ip);
+				if (dragArea)
+					dragArea->addItem(ip);
 			}
 			else
 			{
-				grabArea->removeItem(name, path);
+				if (dragArea)
+					dragArea->removeItem(name, path);
 			}
 			});
 		

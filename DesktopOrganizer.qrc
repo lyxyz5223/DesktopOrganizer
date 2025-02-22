@@ -1,4 +1,20 @@
 <RCC>
-    <qresource prefix="DesktopOrganizer">
+    <qresource prefix="/DesktopOrganizer">
+        <file>img/iconoir--nav-arrow-right.svg</file>
+        <file>img/iconoir--check.svg</file>
+        <file>img/iconoir--refresh.svg</file>
+        <file>img/terminal.ico</file>
+        <file>img/iconoir--paste-clipboard.svg</file>
+        <file>img/iconoir--copy.svg</file>
+        <file>img/tabler--clipboard.svg</file>
+        <file>img/tabler--copy.svg</file>
+        <file>img/tabler--cut.svg</file>
+        <file>img/tabler--dots-horizontal.svg</file>
+        <file>img/tabler--dots-vertical.svg</file>
+        <file>img/tabler--dots.svg</file>
+        <file>img/tabler--plus.svg</file>
+        <file>img/tabler--square-plus.svg</file>
+        <file>img/tabler--square-rounded-plus.svg</file>
+        <file>img/tabler--circle-plus.svg</file>
     </qresource>
 </RCC>

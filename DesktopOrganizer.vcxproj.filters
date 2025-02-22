@@ -61,7 +61,13 @@
     <ClCompile Include="SelectionArea.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GrabArea.cpp">
+    <ClCompile Include="DragArea.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MyMenuAction.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MyMenu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -75,7 +81,10 @@
     <QtMoc Include="SelectionArea.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="GrabArea.h">
+    <QtMoc Include="DragArea.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MyMenuAction.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
@@ -90,6 +99,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ItemProperty.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MyMenu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

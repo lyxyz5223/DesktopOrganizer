@@ -5,7 +5,7 @@
 
 #ifndef MYFILELISTITEM_H
 #define MYFILELISTITEM_H
-#include "GrabArea.h"
+#include "DragArea.h"
 #include "SelectionArea.h"
 #include <QMimeData>
 
@@ -29,6 +29,9 @@ public:
 	void setImage(QImage image) {
 		itemImage = image;
 	}
+	QImage getImage() const {
+		return itemImage;
+	}
 	void adjustSize();
 	void setPath(std::wstring path)
 	{
@@ -46,8 +49,8 @@ public:
 		this->selectionArea = selectionArea;
 		connect(selectionArea, &SelectionArea::resized, this, &MyFileListItem::onSelectionAreaResize);
 	}
-	void setGrabArea(GrabArea* grabArea) {
-		this->grabArea = grabArea;
+	void setGrabArea(DragArea* dragArea) {
+		this->dragArea = dragArea;
 	}
 	void setChecked(bool judge) {
 		if (isChecked() != judge)
@@ -57,8 +60,8 @@ public:
 		}
 	}
 	void deleteLater() {
-		if (grabArea && isChecked())
-			grabArea->removeItem(text().toStdWString(), MyPath);
+		if (dragArea && isChecked())
+			dragArea->removeItem(text().toStdWString(), MyPath);
 		QPushButton::deleteLater();
 	}
 
@@ -103,7 +106,7 @@ private:
 	QPoint startPosOffset;// 鼠标与item左上角坐标的偏移，为正数
 	bool isShadowItem = false;
 	SelectionArea* selectionArea = nullptr;// 选择区域
-	GrabArea* grabArea = nullptr;
+	DragArea* dragArea = nullptr;
 	QDrag* drag = nullptr;
 };
 

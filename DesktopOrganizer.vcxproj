@@ -37,12 +37,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>6.7.2_msvc2019_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;widgets;svg</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>6.7.2_msvc2019_64</QtInstall>
-    <QtModules>core;gui;widgets</QtModules>
+    <QtModules>core;gui;widgets;svg</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -95,9 +95,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="fileProc.cpp" />
-    <ClCompile Include="GrabArea.cpp" />
+    <ClCompile Include="DragArea.cpp" />
     <ClCompile Include="MyFileListItem.cpp" />
     <ClCompile Include="MyFileListWidget.cpp" />
+    <ClCompile Include="MyMenu.cpp">
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename).moc</QtMocFileName>
+    </ClCompile>
+    <ClCompile Include="MyMenuAction.cpp" />
     <ClCompile Include="SelectionArea.cpp" />
     <ClCompile Include="stringProcess.cpp" />
     <QtRcc Include="DesktopOrganizer.qrc" />
@@ -110,12 +117,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="fileProc.h" />
-    <QtMoc Include="GrabArea.h" />
+    <QtMoc Include="DragArea.h" />
     <ClInclude Include="ItemProperty.h" />
     <ClInclude Include="lib\otlv4.h" />
     <QtMoc Include="MyFileListWidget.h" />
     <QtMoc Include="MyFileListItem.h" />
     <QtMoc Include="SelectionArea.h" />
+    <ClInclude Include="MyMenu.h" />
+    <QtMoc Include="MyMenuAction.h" />
     <ClInclude Include="stringProcess.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

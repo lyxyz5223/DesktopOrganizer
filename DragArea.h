@@ -12,12 +12,12 @@
 QPoint relativePosTransition(QWidget* from, QPoint fromPos, QWidget* to);
 QPoint relativePosTransition(QRect from, QPoint fromPos, QRect to);
 
-class GrabArea : public QWidget
+class DragArea : public QWidget
 {
 	Q_OBJECT
 public:
-	~GrabArea() {}
-	GrabArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing);
+	~DragArea() {}
+	DragArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing);
 	void removeItem(std::wstring name, std::wstring path);
 	void addItem(ItemProp ip);
 	void show() {
