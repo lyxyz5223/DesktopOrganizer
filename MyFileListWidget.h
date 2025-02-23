@@ -30,6 +30,8 @@ public:
 		viewMode = mode;
 	}
 	std::vector<std::wstring> splitForConfig(std::wstring text, std::wstring delimiter = L" "/*separator,分隔符*/, std::wstring EscapeString = L"" /*char EscapeCharacter*/);
+	std::vector<std::wstring> splitForShellExecuteFromRegedit(std::wstring text, std::wstring delimiter = L" ", std::wstring escapeString = L"");
+
 	void addPath(std::wstring path) {
 		pathsList.push_back(path);
 	}
@@ -59,6 +61,7 @@ public slots:
 	void pasteProc() {}
 	void cutProc() {}
 	void copyProc() {}
+	void showDesktopOldMenu(QPoint cursorPos = QPoint());
 
 protected:
 	void paintEvent(QPaintEvent* e) override;

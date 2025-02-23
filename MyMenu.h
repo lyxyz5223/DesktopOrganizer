@@ -34,6 +34,12 @@ public:
         return (MyMenuAction*)QMenu::actionAt(pos);
     }
     bool eventFilter(QObject* watched, QEvent* e) override;
+    void setCursorPos(QPoint pos) {
+        cursorPos = pos;
+    }
+    QPoint getCursorPos() const {
+        return cursorPos;
+    }
     //bool close() override {
 
     //}
@@ -52,5 +58,6 @@ protected:
 private:
     bool hasPlayShowAni = false;
     bool hasPlayCloseAni = false;
+    QPoint cursorPos;
 };
 

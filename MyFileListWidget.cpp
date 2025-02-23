@@ -25,6 +25,7 @@
 #include "MyMenuAction.h"
 #include "MyMenu.h"
 #include <QSettings>
+#include <qregularexpression.h>
 
 //C++
 #include <fstream>
@@ -45,8 +46,21 @@
 //My Lib
 #include "fileProc.h"
 //声明&定义
+//注册表
 #define HKEY_CLASSES_ROOT_STR "HKEY_CLASSES_ROOT"
 #define HKEY_CURRENT_USER_ShellNew_STR "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Discardable\\PostSetup\\ShellNew"
+#define HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_STR "HKEY_CLASSES_ROOT\\DesktopBackground"
+#define HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELL_STR "HKEY_CLASSES_ROOT\\DesktopBackground\\Shell"
+#define HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELLEX_STR "HKEY_CLASSES_ROOT\\DesktopBackground\\shellex"
+#define HKEY_CLASSES_ROOT_DIRECTORY_STR "HKEY_CLASSES_ROOT\\Directory"
+#define HKEY_CLASSES_ROOT_DIRECTORY_SHELL_STR "HKEY_CLASSES_ROOT\\Directory\\shell"
+#define HKEY_CLASSES_ROOT_DIRECTORY_SHELLEX_STR "HKEY_CLASSES_ROOT\\Directory\\shellex"
+#define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_STR "HKEY_CLASSES_ROOT\\Directory\\Background"
+#define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR "HKEY_CLASSES_ROOT\\Directory\\Background\\shell"
+#define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELLEX_STR "HKEY_CLASSES_ROOT\\Directory\\Background\\shellex"
+
+
+
 bool isDigits(std::wstring wstr)
 {
 	for (wchar_t ch : wstr)
@@ -235,6 +249,68 @@ void MyFileListWidget::openPowerShell(std::wstring path)
 
 }
 
+void MyFileListWidget::showDesktopOldMenu(QPoint pos)
+{
+	MyMenu* menu = new MyMenu(this);
+	menu->addAction(QIcon(), "test");
+	QSettings reg(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR, QSettings::NativeFormat);
+	QStringList keys = reg.childGroups();
+	for (QString key : keys)
+	{
+		//QSettings re = reg.findChild<QSettings>(key);
+		QSettings re(QString(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR) +"\\" + key, QSettings::NativeFormat);
+		QVariant res = re.value(".", true);
+		if (res.typeId() == QMetaType::Bool && res.toBool())
+			continue;
+		if (res.typeId() == QMetaType::QString)
+		{
+			QString name = res.toString();
+			name.remove(QRegularExpression("^ +\\s*"));
+			if (name.size() && name[0] != '@')
+			{}
+			else
+			{
+				name.removeFirst();
+				//unfinished
+			}
+			//QSettings cmd = re.findChild<QSettings>("command");
+			QSettings cmd(QString(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR) + "\\" + key + "\\command", QSettings::NativeFormat);
+			QVariant cmdContents = cmd.value(".", true);
+			QString cmdStr = "";
+			if (cmdContents.typeId() == QMetaType::Bool && cmdContents.toBool())
+				continue;
+			if (cmdContents.typeId() == QMetaType::QString)
+				cmdStr = cmdContents.toString();
+			menu->addAction(QIcon(), name, this, [=]() {
+				std::vector<std::wstring> cmdVec = splitForShellExecuteFromRegedit(cmdStr.toStdWString(), L" ");
+				if (!cmdVec.size())
+					return;
+				std::wstring exeFilePath = cmdVec[0];
+				cmdVec.erase(cmdVec.begin());
+				QString cmdQStr = QString::fromStdWString(join(cmdVec, L" "));
+				for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
+				{
+					QString tmp = cmdQStr;
+					tmp.replace("%V", QString::fromStdWString(*iter));
+					HINSTANCE hInstance = ShellExecute(0, L"open", (L"\"" + exeFilePath + L"\"").c_str(), tmp.toStdWString().c_str(), 0, SW_NORMAL);
+					if ((INT_PTR)hInstance <= 32)
+					{
+						//error
+#ifdef _DEBUG
+						std::cout << UTF8ToANSI("[Error]: 打开失败，Err code: ") << (INT_PTR)hInstance << " ";
+						if ((INT_PTR)hInstance == 2)
+							std::cout << "File not found!";
+						std::cout << "\n";
+#endif // 
+
+					}
+				}
+			});
+		}
+	}
+	menu->exec(pos);
+}
+
 void MyFileListWidget::MenuClickedProc(QAction* action)
 {
 	if (action->text() == "刷新");
@@ -280,6 +356,7 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		break;
 	case Qt::MouseButton::RightButton:
 	{
+		QPoint curPos = QCursor::pos();
 		//创建菜单
 		MyMenu* menu1 = new MyMenu(this);
 		MyMenuAction* actionRefresh = new MyMenuAction(iconRefresh, "刷新\tE");
@@ -337,8 +414,10 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		}
 
 
-		MyMenuAction* displayAllAction = new MyMenuAction("显示全部选项");
-
+		MyMenuAction* displayFullActions = new MyMenuAction("显示全部选项");
+		connect(displayFullActions, &MyMenuAction::triggered, this, [=]() {
+			showDesktopOldMenu(curPos);
+			});
 
 		// 菜单添加列表项
 		menu1->addAction(actionRefresh);
@@ -365,10 +444,11 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		menu1->addSeparator();
 		menu1->addAction(newFileOrFolderAction);
 		menu1->addSeparator();
-		menu1->addAction(displayAllAction);// 添加二级菜单
+		menu1->addAction(displayFullActions);// 添加二级菜单
 
 		connect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
-		menu1->exec(QCursor::pos());
+		menu1->setCursorPos(curPos);
+		menu1->exec(curPos);
 		disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
 		menu1->deleteLater();
 	}
@@ -377,6 +457,7 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		break;
 	}
 }
+
 
 void MyFileListWidget::paintEvent(QPaintEvent* e)
 {
@@ -510,6 +591,63 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 		dragArea->hide();
 }
 
+
+std::vector<std::wstring> MyFileListWidget::splitForShellExecuteFromRegedit(std::wstring text, std::wstring delimiter, std::wstring escapeString)
+{
+	std::vector<std::wstring> result;
+	std::vector<std::wstring> res = split(text, delimiter, escapeString);
+	if (!res.size())
+		return result;
+	size_t c = std::count(res[0].begin(), res[0].end(), L'"');
+	if (c == 2)
+	{
+		result.push_back(res[0]);
+		std::wstring::size_type st1 = res[0].find(L'"');
+		std::wstring::size_type st2 = res[0].find_last_of(L'"');
+		size_t endIndex = result.size() - 1;
+		if (st2 > st1)
+			result[endIndex] = result[endIndex].substr(st1 + 1, st2 - st1 - 1);//除去字符串前面的双引号
+		res.erase(res.begin());
+	}
+	else if (c == 1)
+	{
+		std::wstring::size_type st = res[0].find(L'"');
+		res[0] = res[0].substr(st + 1);//除去字符串前面的双引号
+		//std::wstring::size_type st = std::wstring::npos;
+		result.push_back(res[0]);
+		auto iter = res.begin() + 1;
+		size_t endIndex = result.size() - 1;
+		for (; iter != res.end(); iter++)
+		{
+			result[endIndex] += delimiter + (*iter);
+			std::wstring::size_type st = iter->find(L'"');
+			if (st != std::wstring::npos && st == iter->length() - 1)
+				break;
+		}
+		//result[endIndex].pop_back();//除去字符串后面的分隔符delimiter
+		result[endIndex].pop_back();//除去字符串后面的双引号
+		if (iter == res.end())
+			return result;
+		else
+		{
+			res.erase(res.begin(), iter + 1);
+			if (res.size())
+			{
+				for (auto iter = res.begin(); iter != res.end(); iter++)
+					result.push_back(*iter);
+			}
+		}
+	}
+	else
+	{
+		//for (auto iter = res.begin(); iter != res.end(); iter++)
+		//{
+		//	result.push_back(*iter);
+		//}
+		result = res;
+	}
+	return result;
+}
 std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, std::wstring delimiter/*separator,分隔符*/, std::wstring EscapeString /*char EscapeCharacter*/)
 {
 	std::vector<std::wstring> result(3);

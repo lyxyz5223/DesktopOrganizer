@@ -1,6 +1,8 @@
 #include "DesktopOrganizer.h"
 
 BOOL CALLBACK EnumWindowsProc(_In_ HWND hwnd, _In_ LPARAM lParam);
+BOOL CALLBACK EnumChildWindowsProc(_In_ HWND hwnd, _In_ LPARAM lParam);
+
 struct ScreenSize{
     int width, height;
     int widthNoTaskBar, heightNoTaskBar;
@@ -8,6 +10,8 @@ struct ScreenSize{
 HWND HWND_thisApp;//这个软件的HWND句柄
 HWND HWND_WorkerW;//桌面内容（WorkerW）的HWND句柄
 HWND HWND_SHELLDLL_DefView;
+HWND HWND_PopupMenu;//右键弹出菜单Win11
+HWND HWND_PopupMenu_Old;//右键弹出菜单Win10
 
 DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     : QMainWindow(parent)
@@ -25,6 +29,9 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     HWND_SHELLDLL_DefView = ::FindWindowEx(HWND_WorkerW, NULL, L"SHELLDLL_DefView", NULL);
     if (HWND_SHELLDLL_DefView == NULL)
         exit(999);
+    EnumChildWindows(0, EnumChildWindowsProc, NULL);
+    HWND_PopupMenu = FindWindow(L"Microsoft.UI.Content.PopupWindowSiteBridge", 0);
+    HWND_PopupMenu_Old = FindWindow(L"#32768", 0);
     //ShowWindow(HWND_SHELLDLL_DefView, SW_HIDE);
     //Sleep(3000);
     //ShowWindow(HWND_SHELLDLL_DefView, SW_NORMAL);
@@ -73,6 +80,24 @@ BOOL CALLBACK EnumWindowsProc(_In_ HWND hwnd, _In_ LPARAM lParam)
         }
     }
     return TRUE;
+}
+BOOL CALLBACK EnumChildWindowsProc(_In_ HWND hwnd, _In_ LPARAM lParam)
+{
+    return FALSE;
+    //"Microsoft.UI.Content.PopupWindowSiteBridge";
+    //"#32768 (弹出菜单)";
+    ////std::cout << "Enum Child Windows\n";
+    //WCHAR className[MAX_PATH];
+    //GetClassName(hwnd, className, MAX_PATH);
+    //if (wcscmp(className, L"Microsoft.UI.Content.PopupWindowSiteBridge") == 0)
+    //{
+    //std::wcout << L"class name: " << className << L"\n";
+    //    WCHAR title[MAX_PATH];
+    //    GetWindowText(hwnd, title, MAX_PATH);
+    //    std::wcout << L"window name: " << title << L"\n";
+    //    //return FALSE;
+    //}
+    //return TRUE;
 }
 
 void DesktopOrganizer::paintEvent(QPaintEvent* e)
