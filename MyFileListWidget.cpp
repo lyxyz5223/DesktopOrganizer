@@ -248,8 +248,119 @@ void MyFileListWidget::openPowerShell(std::wstring path)
 	ShellExecute(0, L"open", L"powershell.exe", ((path == L"") ? path : (std::wstring(L"-noexit -command Set-Location -literalPath \"") + path + L"\"")).c_str(), 0, SW_NORMAL);
 
 }
+void MyFileListWidget::openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd, std::wstring workDirectory, HWND msgOrErrWindow)
+{
+	HINSTANCE hInstance = ShellExecute(msgOrErrWindow, L"open", (L"\"" + exeFilePath + L"\"").c_str(), parameter.c_str(), workDirectory.c_str(), SW_NORMAL);
+	if ((INT_PTR)hInstance <= 32)
+	{
+		//error
+#ifdef _DEBUG
+		std::cout << UTF8ToANSI("[Error]: 打开失败，Err code: ") << (INT_PTR)hInstance << " ";
+		if ((INT_PTR)hInstance == 2)
+			std::cout << "File not found!";
+		std::cout << "\n";
+#endif // 
+	}
+}
+HICON MyFileListWidget::ExtractIconFromRegString(std::wstring regString, HINSTANCE hInst)
+{
+	using std::wstring;
+	auto st = regString.find_last_of(L',');
+	if (st == wstring::npos)
+	{
+		HICON res = ExtractIcon(hInst, regString.c_str(), 0);
+#ifdef _DEBUG
+		if (!res)
+			std::cout << "Uninclude any icon resource: " << wstr2str_2ANSI(regString) << std::endl;
+		else if ((INT)res == 1)
+			std::cout << "The file specified was not an executable file, DLL, or icon file: " << wstr2str_2ANSI(regString) << std::endl;
+#endif // _DEBUG
+		return res;
+	}
+	wstring filePath = regString.substr(0, st);
+	wstring tmpIndexStr = regString.substr(st + 1);
+	wstring indexStr;
+	for (wchar_t c : tmpIndexStr)
+		if (c >= L'0' && c <= L'9')
+			indexStr += c;
+		else if (c == L'-')
+			indexStr += c;
+	unsigned int index = 0;
+	try {
+		index = std::stoul(indexStr);
+	}
+	catch(std::exception e) {
+		std::cerr << e.what() << std::endl;
+	}
+	HICON res = ExtractIcon(hInst, filePath.c_str(), index);
+#ifdef _DEBUG
+	if (!res)
+		std::cout << "Uninclude any icon resource: " << wstr2str_2ANSI(regString) << std::endl;
+	else if ((INT)res == 1)
+		std::cout << "The file specified was not an executable file, DLL, or icon file: " << wstr2str_2ANSI(regString) << std::endl;
+#endif // _DEBUG
+	return res;
+}
 
-void MyFileListWidget::showDesktopOldMenu(QPoint pos)
+std::wstring MyFileListWidget::LoadDllStringFromRegString(std::wstring regString)
+{
+	{
+		using std::wstring;
+		wstring text;
+		auto st = regString.find_last_of(L',');
+		if (st == wstring::npos)
+			return text;
+		wstring filePath = regString.substr(0, st);
+		HMODULE hModule = LoadLibrary(filePath.c_str());
+		if (!hModule)
+		{
+#ifdef _DEBUG
+			std::cerr << "LoadLibrary: " << wstr2str_2ANSI(filePath)
+				<< ", GetLastError() return code:" << GetLastError()
+				<< std::endl;
+#endif
+			return text;
+		}
+		wstring tmpIndexStr = regString.substr(st + 1);
+		wstring indexStr;
+		for (wchar_t c : tmpIndexStr)
+			if (c >= L'0' && c <= L'9')
+				indexStr += c;
+			//else if (c == L'-')
+			//	indexStr += c;
+		unsigned int index = 0;
+		try {
+			index = std::stoul(indexStr);
+		}
+		catch (std::exception e) {
+			std::cerr << e.what() << std::endl;
+		}
+		WCHAR* tmp = new WCHAR[8];
+		int textLength = LoadString(hModule, index, tmp, 0);
+		delete[] tmp;
+		if (!textLength)
+		{
+#ifdef _DEBUG
+			std::cerr << "Uninclude any string in: " << wstr2str_2ANSI(filePath) << std::endl;
+#endif
+			return text;
+		}
+		WCHAR* buffer = new WCHAR[textLength + 1];
+		int gottenCharNum = LoadString(hModule, index, buffer, textLength + 1);
+#ifdef _DEBUG
+		if (!gottenCharNum)
+			std::cerr << "Uninclude any string in: " << wstr2str_2ANSI(filePath) << std::endl;
+#endif
+		if (gottenCharNum < textLength + 1)
+			buffer[gottenCharNum] = 0;
+		text += buffer;
+		delete[] buffer;
+		return text;
+	}
+}
+
+
+void MyFileListWidget::showDesktopOldPopupMenu(QPoint pos)
 {
 	MyMenu* menu = new MyMenu(this);
 	menu->addAction(QIcon(), "test");
@@ -268,11 +379,14 @@ void MyFileListWidget::showDesktopOldMenu(QPoint pos)
 			name.remove(QRegularExpression("^ +\\s*"));
 			if (name.size() && name[0] != '@')
 			{}
-			else
+			else//链接了的字符串
 			{
 				name.removeFirst();
-				//unfinished
+				name = QString::fromStdWString(LoadDllStringFromRegString(name.toStdWString()));
 			}
+			//此处应该处理加速键(&)//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 			//QSettings cmd = re.findChild<QSettings>("command");
 			QSettings cmd(QString(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR) + "\\" + key + "\\command", QSettings::NativeFormat);
 			QVariant cmdContents = cmd.value(".", true);
@@ -281,31 +395,85 @@ void MyFileListWidget::showDesktopOldMenu(QPoint pos)
 				continue;
 			if (cmdContents.typeId() == QMetaType::QString)
 				cmdStr = cmdContents.toString();
-			menu->addAction(QIcon(), name, this, [=]() {
-				std::vector<std::wstring> cmdVec = splitForShellExecuteFromRegedit(cmdStr.toStdWString(), L" ");
-				if (!cmdVec.size())
-					return;
-				std::wstring exeFilePath = cmdVec[0];
-				cmdVec.erase(cmdVec.begin());
-				QString cmdQStr = QString::fromStdWString(join(cmdVec, L" "));
+
+			std::vector<std::wstring> cmdVec = splitForShellExecuteFromRegedit(cmdStr.toStdWString(), L" ");
+			if (!cmdVec.size())
+				return;
+			bool shouldCreateSubMenu = false;//检测是否创建子菜单
+			std::wstring exeFilePath = cmdVec[0];
+			cmdVec.erase(cmdVec.begin());//去除vector中第一项：程序路径
+
+			std::vector<size_t> toReplaceTextIndex;
+			size_t cmdVecSize = cmdVec.size();
+			for (size_t i = 0; i < cmdVecSize; i++)
+			{
+				if (cmdVec[i] == L"\"%V\""
+					|| cmdVec[i] == L"\"%1\""
+					|| cmdVec[i] == L"\"%L\""
+					|| cmdVec[i] == L"\"%W\""
+					|| cmdVec[i] == L"'%V'"
+					|| cmdVec[i] == L"'%1'"
+					|| cmdVec[i] == L"'%L'"
+					|| cmdVec[i] == L"'%W'"
+					|| cmdVec[i] == L"%V"
+					|| cmdVec[i] == L"%1"
+					|| cmdVec[i] == L"%L"
+					|| cmdVec[i] == L"%W")
+				{
+					shouldCreateSubMenu = true;
+					toReplaceTextIndex.push_back(i);
+				}
+			}
+			QIcon itemIcon;
+			QVariant iconSourceVariant = re.value("Icon");
+			if (iconSourceVariant.typeId() == QMetaType::QString)
+			{
+				QString iconSource = iconSourceVariant.toString();
+				itemIcon = ExtractQIconFromRegString(iconSource);
+			}
+			MyMenuAction* item = new MyMenuAction(itemIcon, name);
+			if (shouldCreateSubMenu)
+			{
+				MyMenu* sub = new MyMenu(menu);
 				for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
 				{
-					QString tmp = cmdQStr;
-					tmp.replace("%V", QString::fromStdWString(*iter));
-					HINSTANCE hInstance = ShellExecute(0, L"open", (L"\"" + exeFilePath + L"\"").c_str(), tmp.toStdWString().c_str(), 0, SW_NORMAL);
-					if ((INT_PTR)hInstance <= 32)
+					auto tmpVec = cmdVec;
+					for (size_t i : toReplaceTextIndex)
 					{
-						//error
-#ifdef _DEBUG
-						std::cout << UTF8ToANSI("[Error]: 打开失败，Err code: ") << (INT_PTR)hInstance << " ";
-						if ((INT_PTR)hInstance == 2)
-							std::cout << "File not found!";
-						std::cout << "\n";
-#endif // 
-
+						auto st = tmpVec[i].find(L"%V");
+						if (st != std::wstring::npos)
+							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
+						st = tmpVec[i].find(L"%1");
+						if (st != std::wstring::npos)
+							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
+						st = tmpVec[i].find(L"%L");
+						if (st != std::wstring::npos)
+							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
+						st = tmpVec[i].find(L"%W");
+						if (st != std::wstring::npos)
+							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
 					}
+
+					//tmp.replace("%V", QString::fromStdWString(*iter));//%V通常是当前文件(夹)的路径
+					//tmp.replace("%1", QString::fromStdWString(*iter));
+					//tmp.replace("%L", QString::fromStdWString(*iter));//%L为长目录
+					//tmp.replace("%W", QString::fromStdWString(*iter));//%W为工作目录
+
+					QString cmdQStr = QString::fromStdWString(join(tmpVec, L" "));
+					sub->addAction(QString::fromStdWString(*iter), this, [=]() {
+						openProgram(exeFilePath, cmdQStr.toStdWString());
+						});
 				}
-			});
+				item->setMenu(sub);
+			}
+			else
+			{
+				QString cmdQStr = QString::fromStdWString(join(cmdVec, L" "));
+				connect(item, &MyMenuAction::triggered, this, [=]() {
+					openProgram(exeFilePath, cmdQStr.toStdWString());
+				});
+			}
+			menu->addAction(item);
 		}
 	}
 	menu->exec(pos);
@@ -364,9 +532,38 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		MyMenuAction* pasteAction = new MyMenuAction(iconPaste, "粘贴\tP");
 		connect(pasteAction, &MyMenuAction::triggered, this, &MyFileListWidget::pasteProc);
 		MyMenuAction* newFileOrFolderAction = new MyMenuAction(iconCirclePlus, "新建\tW");
+		MyMenuAction* myFileListWidgetAction = new MyMenuAction(QIcon(), "Widget Control");
+		//二级菜单：Widget控制
+		MyMenu* widgetControlMenu = new MyMenu(menu1);
+		widgetControlMenu->addAction("关闭Widget", this, &MyFileListWidget::close);
+		widgetControlMenu->addAction("退出软件", this, []() {exit(0); });
+		widgetControlMenu->addAction("(主窗口已嵌入桌面)")->setEnabled(false);
+		widgetControlMenu->addAction("脱离主窗口", this, [&]() {
+			SetParent((HWND)this->winId(), 0);
+			});
+		widgetControlMenu->addAction("嵌入主窗口", this, [&]() {
+			SetParent((HWND)this->winId(), (HWND)parent->winId());
+			});
+		widgetControlMenu->addAction("取消无边框窗口属性", this, [&]() {
+			QRect rect(geometry());
+			this->setWindowFlags(this->windowFlags() & (~Qt::FramelessWindowHint));
+			move(rect.topLeft());
+			resize(rect.size());
+			show();
+			});
+		widgetControlMenu->addAction("添加无边框窗口属性", this, [&]() {
+			QRect rect(geometry());
+			this->setWindowFlags(this->windowFlags() | (Qt::FramelessWindowHint));
+			move(rect.topLeft());
+			resize(rect.size());
+			show();
+			});
 
-		//二级菜单
-		MyMenu* newOptions = new MyMenu(this);
+		myFileListWidgetAction->setMenu(widgetControlMenu);
+
+
+		//二级菜单：新建
+		MyMenu* newOptions = new MyMenu(menu1);
 		newOptions->addAction(iconFolder, "文件夹");
 		newOptions->addAction(iconLink, "快捷方式");
 		newFileOrFolderAction->setMenu(newOptions);
@@ -416,7 +613,7 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 
 		MyMenuAction* displayFullActions = new MyMenuAction("显示全部选项");
 		connect(displayFullActions, &MyMenuAction::triggered, this, [=]() {
-			showDesktopOldMenu(curPos);
+			showDesktopOldPopupMenu(curPos);
 			});
 
 		// 菜单添加列表项
@@ -432,7 +629,7 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		//	menu1->addAction(openCMDAction);
 		//}
 		MyMenuAction* cmdAction = new MyMenuAction(iconCMD, "打开cmd");
-		MyMenu* cmdListMenu = new MyMenu();
+		MyMenu* cmdListMenu = new MyMenu(menu1);
 		cmdListMenu->addAction("程序运行的工作路径", this, [=]() { MyFileListWidget::openCMD(L""); });
 		for (std::wstring path : pathsList)
 			cmdListMenu->addAction(QString::fromStdWString(path), this, [=]() { MyFileListWidget::openCMD(path); });
@@ -441,6 +638,8 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 
 		menu1->addSeparator();
 		menu1->addAction(pasteAction);
+		menu1->addSeparator();
+		menu1->addAction(myFileListWidgetAction);
 		menu1->addSeparator();
 		menu1->addAction(newFileOrFolderAction);
 		menu1->addSeparator();

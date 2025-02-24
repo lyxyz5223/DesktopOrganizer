@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+//请勿使EscapeString参数与delimiter值相等，否则处理将出现异常！！(2025-2-24待修复)
 std::vector<std::string> split(std::string text, std::vector<std::string> delimiter/*separator,分隔符*/, std::string EscapeString = "" /*char EscapeCharacter*/);
 std::vector<std::string> split(std::string text, std::string delimiter = " "/*separator,分隔符*/, std::string EscapeString = "" /*char EscapeCharacter*/);
 std::vector<std::wstring> split(std::wstring text, std::vector<std::wstring> delimiter/*separator,分隔符*/, std::wstring EscapeString = L"" /*char EscapeCharacter*/);

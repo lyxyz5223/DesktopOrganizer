@@ -225,8 +225,8 @@ std::wstring join(std::vector<std::wstring> textVec, std::wstring delimiter)
 		resultString += vecElement;
 		resultString += delimiter;
 	}
-	if (resultString.size())
-		resultString.pop_back();
+	if (resultString.size() > delimiter.length())
+		resultString.erase(resultString.end() - delimiter.length());
 	return resultString;
 }
 

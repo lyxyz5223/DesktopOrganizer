@@ -47,6 +47,13 @@ public:
 		isRemovingItem = true;
 		emit removeItemSignal(name, path);
 	}
+	static void openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd = SW_NORMAL, std::wstring workDirectory = L"", HWND msgOrErrWindow = NULL);
+	static HICON ExtractIconFromRegString(std::wstring regString, _Reserved_ HINSTANCE hInst = 0);
+	static QIcon ExtractQIconFromRegString(QString regString, _Reserved_ HINSTANCE hInst = 0) {
+		return QIcon(QPixmap::fromImage(QImage::fromHICON(ExtractIconFromRegString(regString.toStdWString(), hInst))));
+	}
+	static std::wstring LoadDllStringFromRegString(std::wstring regString);
+
 signals:
 	void createItemSignal(std::wstring name, std::wstring path);
 	void removeItemSignal(std::wstring name, std::wstring path);
@@ -61,7 +68,7 @@ public slots:
 	void pasteProc() {}
 	void cutProc() {}
 	void copyProc() {}
-	void showDesktopOldMenu(QPoint cursorPos = QPoint());
+	void showDesktopOldPopupMenu(QPoint cursorPos = QPoint());
 
 protected:
 	void paintEvent(QPaintEvent* e) override;
