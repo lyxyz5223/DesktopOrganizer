@@ -38,6 +38,7 @@
 #include <thread>
 #include <codecvt>
 #include <locale>
+#include <string>
 
 // DataBase
 #define OTL_ODBC
@@ -91,7 +92,13 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 }
 void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)
 {
+	for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
+	{
+		PathCompletion(*iter);
+		isCreatingItem[*iter] = (isRemovingItem[*iter] = false);
+	}
 	this->pathsList = pathsList;
+		
 	configFileNameWithPath = config;
 
 	selectionArea = new SelectionArea(this);
@@ -223,8 +230,7 @@ void MyFileListWidget::refreshSelf()
 	itemSize = QSize();
 	itemsNumPerColumn = 0;
 	selectionRect = QRect();
-	isCreatingItem = false;
-	isRemovingItem = false;
+
 	indexesState = L"0";
 	itemsMap.clear();
 	initialize(parent, pathsList, configFileNameWithPath);
@@ -250,7 +256,7 @@ void MyFileListWidget::openPowerShell(std::wstring path)
 }
 void MyFileListWidget::openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd, std::wstring workDirectory, HWND msgOrErrWindow)
 {
-	HINSTANCE hInstance = ShellExecute(msgOrErrWindow, L"open", (L"\"" + exeFilePath + L"\"").c_str(), parameter.c_str(), workDirectory.c_str(), SW_NORMAL);
+	HINSTANCE hInstance = ShellExecute(msgOrErrWindow, L"open", (exeFilePath).c_str(), parameter.c_str(), workDirectory.c_str(), SW_NORMAL);
 	if ((INT_PTR)hInstance <= 32)
 	{
 		//error
@@ -265,6 +271,18 @@ void MyFileListWidget::openProgram(std::wstring exeFilePath, std::wstring parame
 HICON MyFileListWidget::ExtractIconFromRegString(std::wstring regString, HINSTANCE hInst)
 {
 	using std::wstring;
+	WCHAR* tmp = new WCHAR[1];
+	DWORD len = ExpandEnvironmentStrings(regString.c_str(), tmp, 0);
+	delete[] tmp;
+	if (!len)
+		assert(true && "err: ExpandEnvironmentStrings 1:get len");
+	tmp = new WCHAR[len + 1];
+	len = ExpandEnvironmentStrings(regString.c_str(), tmp, len + 1);
+	if (!len)
+		assert(true && "err: ExpandEnvironmentStrings 2:get str");
+	regString = tmp;
+	delete[] tmp;
+
 	auto st = regString.find_last_of(L',');
 	if (st == wstring::npos)
 	{
@@ -359,123 +377,178 @@ std::wstring MyFileListWidget::LoadDllStringFromRegString(std::wstring regString
 	}
 }
 
-
-void MyFileListWidget::showDesktopOldPopupMenu(QPoint pos)
+void MyFileListWidget::addActionsFromRegedit(QString path, MyMenu* menu)
 {
-	MyMenu* menu = new MyMenu(this);
-	menu->addAction(QIcon(), "test");
-	QSettings reg(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR, QSettings::NativeFormat);
-	QStringList keys = reg.childGroups();
+	QSettings regDirectoryBackground(path, QSettings::NativeFormat);
+	QStringList keys = regDirectoryBackground.childGroups();
 	for (QString key : keys)
 	{
-		//QSettings re = reg.findChild<QSettings>(key);
-		QSettings re(QString(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR) +"\\" + key, QSettings::NativeFormat);
+		//QSettings re = regDirectoryBackground.findChild<QSettings>(key);
+		QSettings re(QString(path) + "\\" + key, QSettings::NativeFormat);
 		QVariant res = re.value(".", true);
+		QString name;
 		if (res.typeId() == QMetaType::Bool && res.toBool())
-			continue;
-		if (res.typeId() == QMetaType::QString)
 		{
-			QString name = res.toString();
+			//continue;
+			res = re.value("MUIVerb");
+			if (res.typeId() == QMetaType::QString)
+				name = res.toString();
+			else
+				name = key;
+		}
+		else if (res.typeId() == QMetaType::QString)
+		{
+			name = res.toString();
 			name.remove(QRegularExpression("^ +\\s*"));
 			if (name.size() && name[0] != '@')
-			{}
+			{
+			}
 			else//链接了的字符串
 			{
 				name.removeFirst();
+				WCHAR* tmp = new WCHAR[1];
+				DWORD len = ExpandEnvironmentStrings(name.toStdWString().c_str(), tmp, 0);
+				delete[] tmp;
+				if (!len)
+					assert(true && "err: ExpandEnvironmentStrings");
+				tmp = new WCHAR[len + 1];
+				len = ExpandEnvironmentStrings(name.toStdWString().c_str(), tmp, len + 1);
+				if (!len)
+					assert(true && "err: ExpandEnvironmentStrings");
+				name = QString::fromWCharArray(tmp);
+				delete[] tmp;
 				name = QString::fromStdWString(LoadDllStringFromRegString(name.toStdWString()));
 			}
-			//此处应该处理加速键(&)//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-			//QSettings cmd = re.findChild<QSettings>("command");
-			QSettings cmd(QString(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR) + "\\" + key + "\\command", QSettings::NativeFormat);
-			QVariant cmdContents = cmd.value(".", true);
-			QString cmdStr = "";
-			if (cmdContents.typeId() == QMetaType::Bool && cmdContents.toBool())
-				continue;
+			//此处应该处理加速键(&)
+			QString tmp = name;
+			name.clear();
+			bool isEscapeChar = false;
+			for (QChar c : tmp)
+			{
+				if (c == '&' && (!isEscapeChar))
+				{
+					isEscapeChar = true;
+					continue;
+				}
+				name += c;
+				isEscapeChar = false;
+			}
+		}
+		else
+			continue;
+		//QSettings cmd = re.findChild<QSettings>("command");
+		QSettings cmd(QString(path) + "\\" + key + "\\command", QSettings::NativeFormat);
+		QVariant cmdContents = cmd.value(".", true);
+		QString cmdStr = "";
+		if (cmdContents.typeId() == QMetaType::Bool && cmdContents.toBool())
+		{
+			//continue;
+			//此处应该处理SettingsURI命令
+			QSettings cmd(QString(path) + "\\" + key, QSettings::NativeFormat);
+			QVariant cmdContents = cmd.value("SettingsURI");
 			if (cmdContents.typeId() == QMetaType::QString)
 				cmdStr = cmdContents.toString();
+		}
+		else if (cmdContents.typeId() == QMetaType::QString)
+			cmdStr = cmdContents.toString();
 
-			std::vector<std::wstring> cmdVec = splitForShellExecuteFromRegedit(cmdStr.toStdWString(), L" ");
-			if (!cmdVec.size())
-				return;
-			bool shouldCreateSubMenu = false;//检测是否创建子菜单
-			std::wstring exeFilePath = cmdVec[0];
-			cmdVec.erase(cmdVec.begin());//去除vector中第一项：程序路径
+		std::vector<std::wstring> cmdVec = splitForShellExecuteFromRegedit(cmdStr.toStdWString(), L" ");
+		if (!cmdVec.size())
+			continue;
+		bool shouldCreateSubMenu = false;//检测是否创建子菜单
+		std::wstring exeFilePath = cmdVec[0];
+		cmdVec.erase(cmdVec.begin());//去除vector中第一项：程序路径
 
-			std::vector<size_t> toReplaceTextIndex;
-			size_t cmdVecSize = cmdVec.size();
-			for (size_t i = 0; i < cmdVecSize; i++)
+
+		//%V通常是当前文件(夹)的路径
+		//%L为长目录
+		//%W为工作目录
+		std::vector<std::wstring> rep = { L"%V", L"%L", L"%1", L"%W", L"%v", L"%l", L"%w" };
+		std::vector<std::wstring> sign = { L"\"", L"'", L""};
+		std::vector<size_t> toReplaceTextIndex;
+		size_t cmdVecSize = cmdVec.size();
+		for (size_t i = 0; i < cmdVecSize; i++)
+		{
+			std::wstring upperCmdParameter = cmdVec[i];
+			//for (auto iter = upperCmdParameter.begin(); iter != upperCmdParameter.end(); iter++)
+			//{
+			//	if ((*iter) >= L'a' && (*iter) <= L'z')
+			//		(*iter) = (*iter) - L'a' + L'A';
+			//}
+			for (std::wstring r : rep)
 			{
-				if (cmdVec[i] == L"\"%V\""
-					|| cmdVec[i] == L"\"%1\""
-					|| cmdVec[i] == L"\"%L\""
-					|| cmdVec[i] == L"\"%W\""
-					|| cmdVec[i] == L"'%V'"
-					|| cmdVec[i] == L"'%1'"
-					|| cmdVec[i] == L"'%L'"
-					|| cmdVec[i] == L"'%W'"
-					|| cmdVec[i] == L"%V"
-					|| cmdVec[i] == L"%1"
-					|| cmdVec[i] == L"%L"
-					|| cmdVec[i] == L"%W")
+				if (upperCmdParameter.find(r) != std::wstring::npos)
 				{
 					shouldCreateSubMenu = true;
 					toReplaceTextIndex.push_back(i);
 				}
 			}
-			QIcon itemIcon;
-			QVariant iconSourceVariant = re.value("Icon");
-			if (iconSourceVariant.typeId() == QMetaType::QString)
-			{
-				QString iconSource = iconSourceVariant.toString();
-				itemIcon = ExtractQIconFromRegString(iconSource);
-			}
-			MyMenuAction* item = new MyMenuAction(itemIcon, name);
-			if (shouldCreateSubMenu)
-			{
-				MyMenu* sub = new MyMenu(menu);
-				for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
-				{
-					auto tmpVec = cmdVec;
-					for (size_t i : toReplaceTextIndex)
-					{
-						auto st = tmpVec[i].find(L"%V");
-						if (st != std::wstring::npos)
-							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
-						st = tmpVec[i].find(L"%1");
-						if (st != std::wstring::npos)
-							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
-						st = tmpVec[i].find(L"%L");
-						if (st != std::wstring::npos)
-							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
-						st = tmpVec[i].find(L"%W");
-						if (st != std::wstring::npos)
-							tmpVec[i] = tmpVec[i].replace(st, 2, iter->c_str());
-					}
 
-					//tmp.replace("%V", QString::fromStdWString(*iter));//%V通常是当前文件(夹)的路径
-					//tmp.replace("%1", QString::fromStdWString(*iter));
-					//tmp.replace("%L", QString::fromStdWString(*iter));//%L为长目录
-					//tmp.replace("%W", QString::fromStdWString(*iter));//%W为工作目录
-
-					QString cmdQStr = QString::fromStdWString(join(tmpVec, L" "));
-					sub->addAction(QString::fromStdWString(*iter), this, [=]() {
-						openProgram(exeFilePath, cmdQStr.toStdWString());
-						});
-				}
-				item->setMenu(sub);
-			}
-			else
-			{
-				QString cmdQStr = QString::fromStdWString(join(cmdVec, L" "));
-				connect(item, &MyMenuAction::triggered, this, [=]() {
-					openProgram(exeFilePath, cmdQStr.toStdWString());
-				});
-			}
-			menu->addAction(item);
 		}
+		QIcon itemIcon;
+		QVariant iconSourceVariant = re.value("Icon");
+		if (iconSourceVariant.typeId() == QMetaType::QString)
+		{
+			QString iconSource = iconSourceVariant.toString();
+			itemIcon = ExtractQIconFromRegString(iconSource);
+		}
+		MyMenuAction* item = new MyMenuAction(itemIcon, name);
+		if (shouldCreateSubMenu)
+		{
+			MyMenu* sub = new MyMenu(menu);
+			for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
+			{
+				auto tmpVec = cmdVec;
+				for (size_t i : toReplaceTextIndex)
+				{
+					for (auto iterRep = rep.begin(); iterRep != rep.end(); iterRep++)
+					{
+						auto st = tmpVec[i].find(*iterRep);
+						if (st != std::wstring::npos)
+							tmpVec[i] = tmpVec[i].replace(st, iterRep->size(), iter->c_str());
+					}
+				}
+
+				QString cmdQStr = QString::fromStdWString(join(tmpVec, L" "));
+				sub->addAction(QString::fromStdWString(*iter), this, [=]() {
+					openProgram(exeFilePath, cmdQStr.toStdWString());
+					});
+			}
+			item->setMenu(sub);
+		}
+		else
+		{
+			QString cmdQStr = QString::fromStdWString(join(cmdVec, L" "));
+			connect(item, &MyMenuAction::triggered, this, [=]() {
+				openProgram(exeFilePath, cmdQStr.toStdWString());
+				});
+		}
+		menu->addAction(item);
 	}
+}
+
+
+void MyFileListWidget::showDesktopOldPopupMenu(QPoint pos)
+{
+	MyMenu* menu = new MyMenu(this);
+	addActionsFromRegedit(HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR, menu);
+
+	//QSettings regDesktopBackground(HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELL_STR, QSettings::NativeFormat);
+	//keys = regDesktopBackground.childGroups();
+	//for (QString key : keys)
+	//{
+	//	QString keyPath = QString(HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELL_STR) + "\\" + key;
+	//	QSettings keyReg(keyPath, QSettings::NativeFormat);
+	//	QVariant keyVar = keyReg.value(".", true);
+	//	if (keyVar.typeId() == QMetaType::Bool)
+	//		continue;
+	//	else if (keyVar.typeId() == QMetaType::QString)
+	//	{
+
+	//	}
+	//}
+	menu->addSeparator();
+	addActionsFromRegedit(HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELL_STR, menu);
 	menu->exec(pos);
 }
 
@@ -807,11 +880,14 @@ std::vector<std::wstring> MyFileListWidget::splitForShellExecuteFromRegedit(std:
 		if (st2 > st1)
 			result[endIndex] = result[endIndex].substr(st1 + 1, st2 - st1 - 1);//除去字符串前面的双引号
 		res.erase(res.begin());
+		for (auto it = res.begin(); it != res.end(); it++)
+			result.push_back(*it);
 	}
 	else if (c == 1)
 	{
 		std::wstring::size_type st = res[0].find(L'"');
-		res[0] = res[0].substr(st + 1);//除去字符串前面的双引号
+		res[0] = res[0].substr(st);//不除去字符串前面的双引号
+		//res[0] = res[0].substr(st + 1);//除去字符串前面的双引号
 		//std::wstring::size_type st = std::wstring::npos;
 		result.push_back(res[0]);
 		auto iter = res.begin() + 1;
@@ -824,7 +900,7 @@ std::vector<std::wstring> MyFileListWidget::splitForShellExecuteFromRegedit(std:
 				break;
 		}
 		//result[endIndex].pop_back();//除去字符串后面的分隔符delimiter
-		result[endIndex].pop_back();//除去字符串后面的双引号
+		//result[endIndex].pop_back();//除去字符串后面的双引号
 		if (iter == res.end())
 			return result;
 		else
@@ -839,11 +915,14 @@ std::vector<std::wstring> MyFileListWidget::splitForShellExecuteFromRegedit(std:
 	}
 	else
 	{
-		//for (auto iter = res.begin(); iter != res.end(); iter++)
-		//{
-		//	result.push_back(*iter);
-		//}
-		result = res;
+		std::wstring::size_type st1 = text.find(L'"');
+		std::wstring::size_type st2 = text.find(L'\'');
+		if (st1 == std::wstring::npos && st2 == std::wstring::npos)
+			result.push_back(join(res, delimiter));
+		else
+		{
+			result = res;
+		}
 	}
 	return result;
 }
@@ -1037,20 +1116,20 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 				{
 					// Find it,remove it from tmpItemsMap
 					tmpItemsMap.erase(nameWithPath);
-					if (!itemsMap[nameWithPath].item && !isCreatingItem && !isRemovingItem)
+					if (!itemsMap[nameWithPath].item && !isCreatingItem[path] && !isRemovingItem[path])
 					{
 						sendCreateItemSignal(tmpwstringarray[0], path);
-						while (isCreatingItem) Sleep(10);
+						while (isCreatingItem[path]) Sleep(10);
 					}
 				}
 				else
 				{
 					// Can't find the file in itemsMap
 					// Send CreateItem Signal
-					if (!isCreatingItem && !isRemovingItem)
+					if (!isCreatingItem[path] && !isRemovingItem[path])
 					{
 						sendCreateItemSignal(tmpwstringarray[0], path);//isCreatingItem = true;已经写在函数内
-						while (isCreatingItem) Sleep(10);
+						while (isCreatingItem[path]) Sleep(10);
 					}
 				}
 				FileIndex++;
@@ -1071,7 +1150,7 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 			//if (i->second.item != nullptr)
 			//{
 				sendRemoveItemSignal(i->second.name, i->second.path);
-				while (isRemovingItem) Sleep(10);
+				while (isRemovingItem[path]) Sleep(10);
 			//}
 			tmpItemsMap.erase(i++);//////////////////////////////////////////
 		}
@@ -1101,8 +1180,7 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 
 void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 {
-	isCreatingItem = true;
-	while (isRemovingItem) Sleep(10);
+	isCreatingItem[path] = true;
 	if(!PathCompletion(path))
 		return;
 	std::wstring nameWithPath = path;
@@ -1171,7 +1249,7 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		pLWItem->move(itemPos);
 		//pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
 		connect(pLWItem, &MyFileListItem::removeSelfSignal, this, [=]() {
-			emit removeItemSignal(pLWItem->text().toStdWString(), pLWItem->getPath());
+			sendRemoveItemSignal(pLWItem->text().toStdWString(), pLWItem->getPath());
 			});
 		connect(pLWItem, &MyFileListItem::checkChange, this, [=](bool checkState) {
 			if (checkState)
@@ -1193,13 +1271,12 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		pLWItem->show();
 	}
 	writeConfigFile(configFileNameWithPath);
-	isCreatingItem = false;
+	isCreatingItem[path] = false;
 }
 
 void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 {
-	isRemovingItem = true;
-	while (isCreatingItem) Sleep(10);
+	isRemovingItem[path] = true;
 	std::wstring nameWithPath = path + name;
 	if (itemsMap.count(nameWithPath))
 	{
@@ -1212,7 +1289,7 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 		itemsMap.erase(nameWithPath);
 	}
 	writeConfigFile(configFileNameWithPath);
-	isRemovingItem = false;
+	isRemovingItem[path] = false;
 }
 
 

@@ -3,7 +3,7 @@
 #include "MyFileListItem.h"
 #include "SelectionArea.h"
 #include "DragArea.h"
-
+#include "MyMenu.h"
 #include <map>
 #include <unordered_map>
 #include <set>
@@ -40,11 +40,11 @@ public:
 	bool writeConfigFile(std::wstring nameWithPath);
 	void checkFilesChangeProc(std::wstring path);
 	void sendCreateItemSignal(std::wstring name, std::wstring path) {
-		isCreatingItem = true;
+		isCreatingItem[path] = true;
 		emit createItemSignal(name, path);
 	}
 	void sendRemoveItemSignal(std::wstring name, std::wstring path) {
-		isRemovingItem = true;
+		isRemovingItem[path] = true;
 		emit removeItemSignal(name, path);
 	}
 	static void openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd = SW_NORMAL, std::wstring workDirectory = L"", HWND msgOrErrWindow = NULL);
@@ -53,6 +53,7 @@ public:
 		return QIcon(QPixmap::fromImage(QImage::fromHICON(ExtractIconFromRegString(regString.toStdWString(), hInst))));
 	}
 	static std::wstring LoadDllStringFromRegString(std::wstring regString);
+	void addActionsFromRegedit(QString path, MyMenu* menu);
 
 signals:
 	void createItemSignal(std::wstring name, std::wstring path);
@@ -110,8 +111,8 @@ private:
 	//临时
 	const int zoomScreen = 10;//item的高度是屏幕高度/宽度中小的那个的1/zoomScreen倍
 	void changeItemSizeAndNumbersPerColumn();
-	bool isRemovingItem = false;
-	bool isCreatingItem = false;
+	std::unordered_map<std::wstring, bool> isRemovingItem;
+	std::unordered_map<std::wstring, bool> isCreatingItem;
 	QRect selectionRect;// 框选区域
 	SelectionArea* selectionArea = nullptr;// 框选区域图形
 	size_t itemsNumPerColumn = 0;
