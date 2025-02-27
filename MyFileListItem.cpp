@@ -122,7 +122,7 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 		qrect1 = rect();
 		/*图标处理并绘制*/
 		QRect imageRect;
-		double zoom = 3.0 / 4;//图标的缩放比例
+		double zoom = iconZoom;//图标的缩放比例
 		QSize itemImageZoneSize = size();
 		itemImageZoneSize.setHeight(itemImageZoneSize.height() - textHeight);
 		if (itemImageZoneSize.width() <= itemImageZoneSize.height())

@@ -5,8 +5,12 @@
 SelectionArea::SelectionArea(QWidget* parent) : QWidget(parent)
 {
 	resize(0, 0);
-	setWindowFlags(Qt::WindowStaysOnTopHint);
+	setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint);
 	setAttribute(Qt::WA_AlwaysStackOnTop, true);
+	setAttribute(Qt::WA_TransparentForMouseEvents, true);
+	setAttribute(Qt::WA_PaintOnScreen, true);
+
+
 }
 
 void SelectionArea::paintEvent(QPaintEvent* e)

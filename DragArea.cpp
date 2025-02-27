@@ -43,6 +43,7 @@ DragArea::DragArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, 
 	setAttribute(Qt::WA_AlwaysStackOnTop, true);
 	setAttribute(Qt::WA_TransparentForMouseEvents, true);
 	setAttribute(Qt::WA_InputMethodTransparent, true);
+	//setAttribute(Qt::WA_PaintOnScreen, true);
 	clearFocus();
 	setWindowOpacity(0.6);
 	parentWidget = parent;

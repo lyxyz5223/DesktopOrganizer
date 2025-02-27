@@ -106,7 +106,7 @@ void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pat
 	dragArea->hide();
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
-	if (!readConfigFileAndCreateItems(config))
+	if (!readConfigFile(config, false))
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 	/*计算item大小和每列item的个数*/
 
@@ -117,6 +117,7 @@ void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pat
 
 MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)// : QWidget(parent)
 {
+	//setAttribute(Qt::WA_PaintOnScreen, true);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setWindowFlags(Qt::FramelessWindowHint);
 	this->parent = parent;
@@ -755,6 +756,7 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 			selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
 				selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
 			selectionArea->update();
+			//selectionArea->mouseMoveProc(selectionRect);
 			//std::cout << selectionRect.x() << "," << selectionRect.y()
 			//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
 		}
@@ -1007,10 +1009,11 @@ bool MyFileListWidget::readConfigFile(std::wstring nameWithPath, bool whetherToC
 					std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
 					wstrLine = converter.from_bytes(strLine);
 					vector<wstring> conf = splitForConfig(wstrLine);
+					++lineCount;
 #ifdef _DEBUG
 					if (conf.size() < 3)
 					{
-						cout << "配置文件存在错误:\n	line " << ++lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
+						cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
 						continue;
 					}
 					cout << wstr2str_2ANSI(wstrLine) << endl;
@@ -1021,7 +1024,8 @@ bool MyFileListWidget::readConfigFile(std::wstring nameWithPath, bool whetherToC
 					itemsMap[conf[1]+conf[0]] = {
 						0, conf[0], conf[1], stoll(conf[2])
 					};
-					createItem(conf[0], conf[1]);
+					if (whetherToCreateItem)
+						createItem(conf[0], conf[1]);
 				}
 			}
 		}
@@ -1147,11 +1151,12 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		{
 			// 下面的注释因为：可能item并不存在而配置文件存在多余项需删除，
 			// 并且函数内有判断，所以此处不需要判断
-			//if (i->second.item != nullptr)
-			//{
+			//if (i->second.item != nullptr && i->second.path == path)
+			if (i->second.path == path)
+			{
 				sendRemoveItemSignal(i->second.name, i->second.path);
-				while (isRemovingItem[path]) Sleep(10);
-			//}
+				while (isRemovingItem[i->second.path]) Sleep(10);
+			}
 			tmpItemsMap.erase(i++);//////////////////////////////////////////
 		}
 		size_t npcBack = itemsNumPerColumn;
@@ -1177,32 +1182,113 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		Sleep(10);
 	}
 }
+//from csdn
+HBITMAP GetThumbnail(const std::wstring& filePath)
+{
+	std::wstring strDir;
+	std::wstring strFileName;
+	int nPos = filePath.find_last_of(L"\\");
+	strDir = filePath.substr(0, nPos);
+	strFileName = filePath.substr(nPos + 1);
+	CComPtr<IShellFolder> pDesktop = NULL;
+	HRESULT hr = SHGetDesktopFolder(&pDesktop);
+	if (FAILED(hr))
+		return NULL;
+	LPITEMIDLIST pidl = NULL;
+	hr = pDesktop->ParseDisplayName(NULL, NULL, (LPWSTR)strDir.c_str(), NULL, &pidl, NULL);
+	if (FAILED(hr))
+		return NULL;
+	CComPtr<IShellFolder> pSub = NULL;
+	hr = pDesktop->BindToObject(pidl, NULL, IID_IShellFolder, (void**)&pSub);
+	if (FAILED(hr))
+		return NULL;
+	hr = pSub->ParseDisplayName(NULL, NULL, (LPWSTR)strFileName.c_str(), NULL, &pidl, NULL);
+	if (FAILED(hr))
+		return NULL;
+	CComPtr<IExtractImage> pIExtract = NULL;
+	hr = pSub->GetUIObjectOf(NULL, 1, (LPCITEMIDLIST*)&pidl, IID_IExtractImage, NULL, (void**)&pIExtract);
+	if (FAILED(hr))
+		return NULL;
+	SIZE size = { 64, 128 }; // 请求获取的图片大小
+	DWORD dwFlags = IEIFLAG_ORIGSIZE | IEIFLAG_QUALITY;
+	OLECHAR pathBuffer[MAX_PATH] = { 0 };
+	hr = pIExtract->GetLocation(pathBuffer, MAX_PATH, NULL, &size, 24, &dwFlags);
+	if (FAILED(hr))
+		return NULL;
+	HBITMAP hThumbnail = NULL;
+	hr = pIExtract->Extract(&hThumbnail);
+	if (FAILED(hr))
+		return NULL;
+	return hThumbnail;
+}
 
 void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 {
 	isCreatingItem[path] = true;
-	if(!PathCompletion(path))
+	while (isRemovingItem[path]) Sleep(10);
+	if (!PathCompletion(path))
+	{
+		isCreatingItem[path] = false;
 		return;
+	}
 	std::wstring nameWithPath = path;
 	nameWithPath += name;
 	if (!itemsMap.count(nameWithPath))
 		itemsMap[nameWithPath] = ItemProp();
 	if (!itemsMap[nameWithPath].item)
 	{
+		/*创建新item*/
+		MyFileListItem* pLWItem = new MyFileListItem(this, itemSize);
+
 		/*新添加的item的图标*/
 		QImage pLWItemImage;
-		//IShellItemImageFactory* ISIIFactory = nullptr;
-		//HRESULT hr = SHCreateItemFromParsingName(namewithpath.c_str(), nullptr, __uuidof(IShellItemImageFactory), (void**)&ISIIFactory);
-		//if (SUCCEEDED(hr))
+		IShellItemImageFactory* ISIIFactory = nullptr;
+		HRESULT hr = SHCreateItemFromParsingName(nameWithPath.c_str(), nullptr, __uuidof(IShellItemImageFactory), (void**)&ISIIFactory);
+		if (SUCCEEDED(hr))
+		{
+			SIZE imageSize = { 256,256 };
+			HBITMAP hBitmap;
+			hr = ISIIFactory->GetImage(imageSize, SIIGBF_RESIZETOFIT, &hBitmap);
+			if (SUCCEEDED(hr))
+				pLWItemImage = QImage::fromHBITMAP(hBitmap);
+			BITMAP bmp;
+			GetObject(hBitmap, sizeof(BITMAP), (LPBYTE)&bmp);
+			std::cout << "\t\t" << bmp.bmHeight << "\n";
+			DeleteObject(hBitmap);
+			ISIIFactory->Release();
+		}
+		
+		// 法二：
+		//IShellItem* item = nullptr;
+		//HRESULT hr = SHCreateItemFromParsingName(nameWithPath.c_str(), nullptr, IID_PPV_ARGS(&item));
+		//IThumbnailCache* cache = nullptr;
+		//hr = CoCreateInstance(
+		//	CLSID_LocalThumbnailCache,
+		//	nullptr,
+		//	CLSCTX_INPROC,
+		//	IID_PPV_ARGS(&cache));
+		//ISharedBitmap* sharedBitmap;
+		//hr = cache->GetThumbnail(
+		//	item,
+		//	0,
+		//	WTS_EXTRACT,
+		//	&sharedBitmap,
+		//	nullptr,
+		//	nullptr);
+		//HBITMAP hBitmap = NULL;
+		//if (sharedBitmap)
 		//{
-		//	SIZE imageSize = { 256,256 };
-		//	HBITMAP bitmap;
-		//	hr = ISIIFactory->GetImage(imageSize, SIIGBF_RESIZETOFIT, &bitmap);
+		//	hr = sharedBitmap->GetSharedBitmap(&hBitmap);
 		//	if (SUCCEEDED(hr))
-		//		pLWItemImage = QImage::fromHBITMAP(bitmap);
-		//	DeleteObject(bitmap);
-		//	ISIIFactory->Release();
+		//	{
+		//		pLWItemImage = QImage::fromHBITMAP(hBitmap);
+		//		DeleteObject(hBitmap);
+		//	}
+		//	sharedBitmap->Release();
 		//}
+		//cache->Release();
+		//item->Release();
+
 		if (pLWItemImage.isNull())
 		{
 			SHFILEINFO sfi;
@@ -1234,8 +1320,6 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		/*计算新添加的item的合适位置的index*/
 		int xIndex = st / itemsNumPerColumn + 1;
 		int yIndex = st % itemsNumPerColumn + 1;
-		/*创建新item*/
-		MyFileListItem* pLWItem = new MyFileListItem(this, itemSize);
 		pLWItem->setText(wstr2str_2UTF8(name).c_str());
 		pLWItem->setViewMode(viewMode);
 		pLWItem->setPath(path);
@@ -1277,6 +1361,7 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 {
 	isRemovingItem[path] = true;
+	while (isCreatingItem[path]) Sleep(10);
 	std::wstring nameWithPath = path + name;
 	if (itemsMap.count(nameWithPath))
 	{

@@ -64,7 +64,9 @@ public:
 			dragArea->removeItem(text().toStdWString(), MyPath);
 		QPushButton::deleteLater();
 	}
-
+	auto getIconZoom() const {
+		return iconZoom;
+	}
 protected:
 	void mousePressEvent(QMouseEvent* e) override;
 	void mouseReleaseEvent(QMouseEvent* e) override;
@@ -108,6 +110,8 @@ private:
 	SelectionArea* selectionArea = nullptr;// 选择区域
 	DragArea* dragArea = nullptr;
 	QDrag* drag = nullptr;
+	double iconZoom = 3.0 / 4;//图标的缩放比例
+
 };
 
 
