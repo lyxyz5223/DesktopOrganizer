@@ -20,10 +20,24 @@ private:// 属性定义区
 	std::vector<std::wstring> pathsList;// 文件路径列表
 	std::wstring indexesState = L"0";// 按列计算的索引状态，1表示已占用，0表示未占用
 	std::wstring configFileNameWithPath;
+	std::mutex mtxConfigFile;// 读取/写入配置文件的互斥锁
+
 	//QFont itemFont;
 	Spacing itemSpacing = { 10, 10 };
 	//Spacing itemSpacing = { 15, 15 };
 	QWidget* parent = nullptr;// 父控件
+	QColor backgroundColor = QColor(255, 255, 255, 1);
+	bool ifShowTitle = false;
+	QRect titleBarGeometry = QRect(0, 0, -1, 20);
+	enum TitleBarPositionMode {
+		Coord,
+		TopLeft,
+		TopCenter,
+		TopRight,
+		BottomLeft,
+		BottomCenter,
+		BottomRight,
+	} titleBarPositionMode = TitleBarPositionMode::Coord;
 
 	QIcon iconRefresh = QIcon(":/DesktopOrganizer/img/iconoir--refresh.svg");
 	QIcon iconCMD = QIcon(":/DesktopOrganizer/img/terminal.ico");
@@ -85,10 +99,50 @@ public:
 	//MyFileListWidget(QWidget* parent = nullptr);
 	MyFileListWidget(QWidget* parent,
 		std::vector<std::wstring> pathsList,
-		std::wstring config);
+		std::wstring config, bool showTitle = false);
 	void initialize(QWidget* parent,
 		std::vector<std::wstring> pathsList,
 		std::wstring config);
+
+
+	void setBackgroundColor(QColor color) {
+		backgroundColor = color;
+	}
+	QColor getBackgroundColor() const {
+		return backgroundColor;
+	}
+
+
+	//标题栏函数
+	bool getIfShowTitle() const {
+		return ifShowTitle;
+	}
+	void setIfShowTitle(bool ifShowTitle) {
+		this->ifShowTitle = ifShowTitle;
+	}
+	QSize getTitleBarSize() const {
+		return titleBarGeometry.size();
+	}
+	void setTitleBarSize(QSize size) {
+		titleBarGeometry.setSize(size);
+		setMinimumHeight(titleBarGeometry.y() + titleBarGeometry.height());
+	}
+	QPoint getTitleBarPosition() const {
+		return titleBarGeometry.topLeft();
+	}
+	void setTitleBarPosition(QPoint pos) {
+		titleBarGeometry.moveTo(pos);
+		setMinimumHeight(titleBarGeometry.y() + titleBarGeometry.height());
+	}
+	QRect getTitleBarGeometry() const {
+		return titleBarGeometry;
+	}
+	void setTitleBarGeometry(QRect rect) {
+		titleBarGeometry = rect;
+		setMinimumHeight(titleBarGeometry.y() + titleBarGeometry.height());
+	}
+
+
 	void setViewMode(MyFileListItem::ViewMode mode) {
 		viewMode = mode;
 	}

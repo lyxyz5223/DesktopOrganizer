@@ -52,12 +52,13 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     re = sc->availableGeometry();
     this->resize(re.size());
     MyFileListWidget* pLWidget = new MyFileListWidget(this,
-        std::vector<std::wstring>({ L"C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试"/*, L"C:\\Users\\lyxyz5223\\Desktop"*//*, L"D:\\1Downloads"*/}/*文件夹路径C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试*/),
+        std::vector<std::wstring>({ L"C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试", L"C:\\Users\\lyxyz5223\\Desktop"/*, L"D:\\1Downloads"*/}/*文件夹路径C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试*/),
         L"config.ini");
     pLWidget->setViewMode(MyFileListItem::ViewMode::Icon);
+    pLWidget->setBackgroundColor(QColor(0, 0, 0, 100));
     //pLWidget->readConfigFile(L"config.ini");
 
-    pLWidget->resize(re.size());
+    pLWidget->resize(re.size() / 2);
     pLWidget->move(0, 0);
     pLWidget->show();
 

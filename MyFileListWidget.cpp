@@ -113,7 +113,7 @@ void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pat
 	dragArea->hide();
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
-	if (!readConfigFile(config, true))
+	if (pathsList.size() && !readConfigFile(config, true))
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 	/*计算item大小和每列item的个数*/
 
@@ -122,7 +122,12 @@ void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pat
 		checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
 }
 
-MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)// : QWidget(parent)
+MyFileListWidget::MyFileListWidget(
+	QWidget* parent,//父亲控件
+	std::vector<std::wstring> pathsList,//文件路径列表
+	std::wstring config,//配置文件
+	bool showTitle)//是否显示标题栏
+	// : QWidget(parent)
 {
 	//setAttribute(Qt::WA_PaintOnScreen, true);
 	setAttribute(Qt::WA_TranslucentBackground, true);
@@ -130,6 +135,9 @@ MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pa
 	this->parent = parent;
 	SetParent((HWND)winId(), (HWND)parent->winId());
 	//setParent(parent);
+	ifShowTitle = showTitle;
+	if (ifShowTitle)
+		setMinimumHeight(titleBarGeometry.y() + titleBarGeometry.height());
 	setMouseTracking(true);
 	installEventFilter(this);
 	setAcceptDrops(true);
@@ -692,7 +700,7 @@ bool MyFileListWidget::createNewFile(std::wstring newFileName, std::wstring path
 
 void MyFileListWidget::MenuClickedProc(QAction* action)
 {
-	if (action->text() == "刷新");
+	//if (action->text() == "刷新");
 }
 
 void MyFileListWidget::mousePressEvent(QMouseEvent* e)
@@ -743,8 +751,28 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		MyMenuAction* pasteAction = new MyMenuAction(iconPaste, "粘贴\tP");
 		connect(pasteAction, &MyMenuAction::triggered, this, &MyFileListWidget::pasteProc);
 		MyMenuAction* newFileOrFolderAction = new MyMenuAction(iconCirclePlus, "新建\tW");
-		MyMenuAction* myFileListWidgetAction = new MyMenuAction(QIcon(), "Widget Control");
+
+
+		//------------------------------------------------------
+		//二级菜单：Desktop Organizer
+		MyMenuAction* desktopOrganizerAction = new MyMenuAction(QIcon(), "Desktop Organizer");
+		MyMenu* desktopOrganizerMenu = new MyMenu(menu1);
+		desktopOrganizerMenu->addAction(
+			"创建盒子",
+			this,
+			[=]() {
+				MyFileListWidget* newWidget = new MyFileListWidget(this, std::vector<std::wstring>(), L"1.ini");
+				newWidget->setWindowTitle("SubTest");
+				newWidget->setIfShowTitle(true);
+				newWidget->move(relativePosTransition(0, curPos, this) - geometry().topLeft());
+				newWidget->setBackgroundColor(QColor(0, 0, 0, 100));
+				newWidget->resize(size() / 3);
+				newWidget->show();
+			}
+		);
+		desktopOrganizerAction->setMenu(desktopOrganizerMenu);
 		//二级菜单：Widget控制
+		MyMenuAction* myFileListWidgetAction = new MyMenuAction(QIcon(), "Widget Control");
 		MyMenu* widgetControlMenu = new MyMenu(menu1);
 		widgetControlMenu->addAction("关闭Widget", this, &MyFileListWidget::close);
 		widgetControlMenu->addAction("退出软件", this, []() {exit(0); });
@@ -769,7 +797,6 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 			resize(rect.size());
 			show();
 			});
-
 		myFileListWidgetAction->setMenu(widgetControlMenu);
 
 
@@ -874,6 +901,7 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		menu1->addSeparator();
 		menu1->addAction(pasteAction);
 		menu1->addSeparator();
+		menu1->addAction(desktopOrganizerAction);
 		menu1->addAction(myFileListWidgetAction);
 		menu1->addSeparator();
 		menu1->addAction(newFileOrFolderAction);
@@ -896,12 +924,28 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 void MyFileListWidget::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
-	p.fillRect(rect(), QColor(255, 255, 255, 1));
-
-	//选中区域的绘制
-	//p.fillRect(selectionRect, QColor(10, 123, 212, 100));
-	//p.setPen(QColor(10, 123, 212));
-	//p.drawRect(selectionRect);
+	p.fillRect(rect(), backgroundColor);
+	p.save();
+	p.setPen(QPen(Qt::white, 1));
+	p.drawRect(rect());
+	p.restore();
+	if (ifShowTitle)
+	{
+		p.save();
+		QPen pen(QColor(
+			255 - backgroundColor.red(),
+			255 - backgroundColor.green(),
+			255 - backgroundColor.blue(),
+			255));
+		p.setPen(pen);
+		p.drawLine(
+			QPoint(titleBarGeometry.x(),
+				titleBarGeometry.y() + titleBarGeometry.height()),
+			QPoint(titleBarGeometry.x() + titleBarGeometry.width(),
+				titleBarGeometry.y() + titleBarGeometry.height())
+		);
+		p.restore();
+	}
 	QWidget::paintEvent(e);
 }
 void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
@@ -1142,6 +1186,8 @@ std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, st
 bool MyFileListWidget::readConfigFile(std::wstring nameWithPath, bool whetherToCreateItem)
 {
 	using namespace std;
+	std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
+
 	fstream fConfig(nameWithPath, ios::app | ios::out);
 	if (!fConfig.is_open())
 		return false;
@@ -1197,6 +1243,8 @@ bool MyFileListWidget::readConfigFile(std::wstring nameWithPath, bool whetherToC
 bool MyFileListWidget::writeConfigFile(std::wstring nameWithPath)
 {
 	using namespace std;
+	std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
+
 	wstring delimiter = L" ";
 	ofstream outConfig;
 	outConfig.open(nameWithPath);
@@ -1221,13 +1269,6 @@ bool MyFileListWidget::writeConfigFile(std::wstring nameWithPath)
 
 void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 {
-	//using namespace std;
-	//if (!PathCompletion(path))
-	//	return;
-	//vector<vector<wstring>> filesVector;
-	//long long filesNum = GetFilesArray(path, filesVector);
-	//if (filesNum <= 0)
-	//	MessageBox((HWND)this->winId(), L"检测文件更改失败，软件可能无法正常运行", L"错误", MB_ICONERROR);
 	using namespace std;
 	WCHAR* cFilePath;
 	cFilePath = (WCHAR*)path.c_str();
@@ -1236,7 +1277,6 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		intptr_t FileIndex = 0;
 		WIN32_FIND_DATA ffd;
 		LARGE_INTEGER filesize;
-		//TCHAR szDir[MAX_PATH];
 		HANDLE hFind = INVALID_HANDLE_VALUE;
 		DWORD dwError = 0;
 		if (!PathCompletion(path))
@@ -1285,34 +1325,15 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 						ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
 						if (!isItemTaskInQueue(task))
 							addItemTask(task);
-						//sendCreateItemSignal(tmpwstringarray[0], path);
-						//while (isCreatingItem[path])
-						//{
-						//	if (checkFilesChangeThreadExit)
-						//		return;//退出线程
-						//	Sleep(10);
-						//}
 					}
 				}
 				else
 				{
 					// Can't find the file in itemsMap
-					// Send CreateItem Signal
-					
-					//使用TaskQueue后不再需要判断
-					//if (!isCreatingItem[path] && !isRemovingItem[path])
-					//{
-						ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
-						if (!isItemTaskInQueue(task))
-							addItemTask(task);
-						//sendCreateItemSignal(tmpwstringarray[0], path);//isCreatingItem = true;已经写在函数内
-						//while (isCreatingItem[path])
-						//{
-						//	if (checkFilesChangeThreadExit)
-						//		return;//退出线程
-						//	Sleep(10);
-						//}
-					//}
+					// Send CreateItem Signal		
+					ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
+					if (!isItemTaskInQueue(task))
+						addItemTask(task);
 				}
 				FileIndex++;
 			}
@@ -1327,20 +1348,11 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		// Send RemoveItem Signal
 		for (auto i = tmpItemsMap.begin(); i != tmpItemsMap.end(); )
 		{
-			// 下面的注释因为：可能item并不存在而配置文件存在多余项需删除，
-			// 并且函数内有判断，所以此处不需要判断
-			//if (i->second.item != nullptr && i->second.path == path)
 			if ((i->second.path == path) || (std::find(pathsList.begin(), pathsList.end(), i->second.path) == pathsList.end()))
 			{
 				ItemTask task = { &MyFileListWidget::sendRemoveItemSignalAndWriteConfig, i->second.name, i->second.path };
 				if (!isItemTaskInQueue(task))
 					addItemTask(task);
-				//while (isRemovingItem[i->second.path])
-				//{
-				//	if (checkFilesChangeThreadExit)
-				//		return;//退出线程
-				//	Sleep(10);
-				//}
 			}
 			tmpItemsMap.erase(i++);
 		}
@@ -1453,7 +1465,7 @@ QImage HBITMAPToQImage(HBITMAP hBitmap, bool& flipped)
 	GetObject(hBitmap, sizeof(BITMAP), &bitmapInfo);
 
 	// 创建一个 QImage
-	QImage image(bitmapInfo.bmWidth, bitmapInfo.bmHeight, QImage::Format_ARGB32_Premultiplied);
+	QImage image(bitmapInfo.bmWidth, bitmapInfo.bmHeight, QImage::Format_ARGB32);
 	image.fill(Qt::transparent); // 填充透明背景
 
 	// 创建一个内存设备上下文
