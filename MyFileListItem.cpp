@@ -353,7 +353,6 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 			}
 		}
 		//drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
-
 	}
 		break;
 	default:
@@ -372,8 +371,11 @@ void MyFileListItem::mouseMoveEvent(QMouseEvent* e)
 		//	shadowItem->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
 		//}
 		if (drag)
+		{
 			drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
-
+			drag->deleteLater();
+			drag = nullptr;
+		}
 	}
 }
 void MyFileListItem::dragMoveEvent(QDragMoveEvent* e)
@@ -390,6 +392,17 @@ void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
 	{
 	case Qt::MouseButton::LeftButton:
 	{
+		if (drag)
+		{
+			drag->deleteLater();
+			drag = nullptr;
+			//并未拖动，所以多选变为单选
+			if (selectionArea)
+			{
+				selectionArea->move(mapToParent(e->pos()));
+				selectionArea->reset();
+			}
+		}
 		if(dragArea)
 			dragArea->hide();
 	}
@@ -411,16 +424,16 @@ void MyFileListItem::removeSelfSlot()
 {
 	//MessageBox(0, (getPath() + text().toStdWString()).c_str(), 0, 0);
 	std::wstring nameWithPath = getPath() + text().toStdWString();
-	WCHAR* CNameWithPath = new WCHAR[nameWithPath.size() + 2];
+	WCHAR* cNameWithPath = new WCHAR[nameWithPath.size() + 2];
 	for (size_t i = 0; i < nameWithPath.size(); i++)
-		CNameWithPath[i] = nameWithPath[i];
-	CNameWithPath[nameWithPath.size()] = L'\0';
-	CNameWithPath[nameWithPath.size() + 1] = L'\0';
+		cNameWithPath[i] = nameWithPath[i];
+	cNameWithPath[nameWithPath.size()] = L'\0';
+	cNameWithPath[nameWithPath.size() + 1] = L'\0';
 	SHFILEOPSTRUCT fileOpStruct;
 	ZeroMemory(&fileOpStruct, sizeof(fileOpStruct));
 	fileOpStruct.fFlags = FOF_ALLOWUNDO;
 	fileOpStruct.wFunc = FO_DELETE;
-	fileOpStruct.pFrom = CNameWithPath;
+	fileOpStruct.pFrom = cNameWithPath;
 	int fileOpResult = SHFileOperation(&fileOpStruct);
 	std::wcout << L"用户删除：" << fileOpStruct.pFrom << std::endl;
 	if (fileOpResult)
@@ -429,6 +442,6 @@ void MyFileListItem::removeSelfSlot()
 		MessageBox(0, (L"删除失败！\n删除" + std::wstring() + fileOpStruct.pFrom + std::wstring() + L"时出现问题，\n错误代码：" + std::to_wstring(fileOpResult)).c_str(), L"error", 0);
 	}
 	//MessageBox(0, fileOpStruct.pFrom, (L"函数返回："+std::to_wstring(fileOpResult)).c_str(), 0);
-	delete[] CNameWithPath;
+	delete[] cNameWithPath;
 	//_wremove((getPath() + L"\\" + text().toStdWString()).c_str());
 }

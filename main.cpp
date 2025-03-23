@@ -9,7 +9,34 @@ int main(int argc, char *argv[])
     return a.exec();
 }
 
-
+//通过扩展名获取注册表执行COMMAND
+//#include <iostream>
+//#include <windows.h>
+//#include <shlwapi.h>
+//
+//#pragma comment(lib, "shlwapi.lib") // 链接 SHLWAPI 库
+//
+//int main() {
+//    std::wcout.imbue(std::locale("chs"));
+//
+//    // 文件扩展名
+//    const wchar_t* extension = L".docx";
+//    // 获取默认打开程序的路径
+//    wchar_t* programPath = nullptr;
+//    DWORD co = 1024;
+//    HRESULT hr = AssocQueryString(ASSOCF_NONE, ASSOCSTR_COMMAND, extension, NULL, programPath, &co);
+//    programPath = new wchar_t[co];
+//    hr = AssocQueryString(ASSOCF_NONE, ASSOCSTR_COMMAND, extension, NULL, programPath, &co);
+//    if (SUCCEEDED(hr))
+//    {
+//        // 输出结果
+//        std::wcout << L"文件扩展名: " << extension << std::endl;
+//        //std::wcout << L"文件类型: " << fileType << std::endl;
+//        std::wcout << L"默认打开程序路径: " << programPath << std::endl;
+//    }
+//
+//    return 0;
+//}
 // 测试
 //#include <QCoreApplication>
 //#include <QRegularExpression>

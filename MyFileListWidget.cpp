@@ -11,6 +11,7 @@
 #include <atlbase.h>
 #include <atlcore.h>
 #include <atlcom.h>
+#include <commoncontrols.h>
 // GetIcon
 #pragma comment(lib, "Comctl32.lib")
 
@@ -48,14 +49,19 @@
 #include "fileProc.h"
 //声明&定义
 //注册表
+//根目录
 #define HKEY_CLASSES_ROOT_STR "HKEY_CLASSES_ROOT"
+//新建
 #define HKEY_CURRENT_USER_ShellNew_STR "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Discardable\\PostSetup\\ShellNew"
+//桌面空处右键
 #define HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_STR "HKEY_CLASSES_ROOT\\DesktopBackground"
 #define HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELL_STR "HKEY_CLASSES_ROOT\\DesktopBackground\\Shell"
 #define HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELLEX_STR "HKEY_CLASSES_ROOT\\DesktopBackground\\shellex"
+//文件夹右键
 #define HKEY_CLASSES_ROOT_DIRECTORY_STR "HKEY_CLASSES_ROOT\\Directory"
 #define HKEY_CLASSES_ROOT_DIRECTORY_SHELL_STR "HKEY_CLASSES_ROOT\\Directory\\shell"
 #define HKEY_CLASSES_ROOT_DIRECTORY_SHELLEX_STR "HKEY_CLASSES_ROOT\\Directory\\shellex"
+//文件夹空处
 #define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_STR "HKEY_CLASSES_ROOT\\Directory\\Background"
 #define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR "HKEY_CLASSES_ROOT\\Directory\\Background\\shell"
 #define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELLEX_STR "HKEY_CLASSES_ROOT\\Directory\\Background\\shellex"
@@ -85,17 +91,18 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 	if (!sc) return;
 	QRect re = sc->geometry();
 	re = sc->availableGeometry();
-	itemSize = QSize(re.height() / zoomScreen * 4 / 5, re.height() / zoomScreen);
+	itemSize = QSize(re.width() / zoomScreenWidth, re.width() / zoomScreenWidth *5 / 4);
 	itemsNumPerColumn = height() / (itemSize.height() + itemSpacing.line);
 	if (itemsNumPerColumn == 0)
 		itemsNumPerColumn = 1;
 }
 void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)
 {
+	//该函数共有1处isCreatingItem和isRemovingItem
 	for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
 	{
 		PathCompletion(*iter);
-		isCreatingItem[*iter] = (isRemovingItem[*iter] = false);
+		//isCreatingItem[*iter] = (isRemovingItem[*iter] = false);
 	}
 	this->pathsList = pathsList;
 		
@@ -106,7 +113,7 @@ void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pat
 	dragArea->hide();
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
-	if (!readConfigFile(config, false))
+	if (!readConfigFile(config, true))
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 	/*计算item大小和每列item的个数*/
 
@@ -188,16 +195,18 @@ MyFileListWidget::MyFileListWidget(QWidget* parent, std::vector<std::wstring> pa
 	if (connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem))
 	{
 #ifdef _DEBUG
-		std::cout << "connect succeeded: connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem)\n";
+		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem)\n";
 #endif // _DEBUG
 	}
 	if (connect(this, SIGNAL(removeItemSignal(std::wstring, std::wstring)), this, SLOT(removeItem(std::wstring, std::wstring))))
 	{
 #ifdef _DEBUG
-		std::cout << "connect succeeded: connect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem)\n";
+		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem)\n";
 #endif // _DEBUG
 	}
 
+	itemTaskThread = std::thread(&MyFileListWidget::itemTaskExecuteProc, this);
+	itemTaskThread.detach();
 	initialize(parent, pathsList, config);
 }
 
@@ -257,6 +266,19 @@ void MyFileListWidget::openPowerShell(std::wstring path)
 }
 void MyFileListWidget::openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd, std::wstring workDirectory, HWND msgOrErrWindow)
 {
+	//wchar_t* programPath = nullptr;
+	//DWORD co = 1024;
+	//HRESULT hr = AssocQueryString(ASSOCF_NONE, ASSOCSTR_COMMAND, extension, NULL, programPath, &co);
+	//programPath = new wchar_t[co];
+	//hr = AssocQueryString(ASSOCF_NONE, ASSOCSTR_COMMAND, extension, NULL, programPath, &co);
+	//if (SUCCEEDED(hr))
+	//{
+	//	// 输出结果
+	//	std::wcout << L"文件扩展名: " << extension << std::endl;
+	//	//std::wcout << L"文件类型: " << fileType << std::endl;
+	//	std::wcout << L"默认打开程序路径: " << programPath << std::endl;
+	//}
+
 	HINSTANCE hInstance = ShellExecute(msgOrErrWindow, L"open", (exeFilePath).c_str(), parameter.c_str(), workDirectory.c_str(), SW_NORMAL);
 	if ((INT_PTR)hInstance <= 32)
 	{
@@ -471,13 +493,9 @@ void MyFileListWidget::addActionsFromRegedit(QString path, MyMenu* menu)
 		for (size_t i = 0; i < cmdVecSize; i++)
 		{
 			std::wstring upperCmdParameter = cmdVec[i];
-			//for (auto iter = upperCmdParameter.begin(); iter != upperCmdParameter.end(); iter++)
-			//{
-			//	if ((*iter) >= L'a' && (*iter) <= L'z')
-			//		(*iter) = (*iter) - L'a' + L'A';
-			//}
 			for (std::wstring r : rep)
 			{
+				//TODO: 此处应该处理转义字符，但仍未实现
 				if (upperCmdParameter.find(r) != std::wstring::npos)
 				{
 					shouldCreateSubMenu = true;
@@ -552,6 +570,125 @@ void MyFileListWidget::showDesktopOldPopupMenu(QPoint pos)
 	addActionsFromRegedit(HKEY_CLASSES_ROOT_DESKTOPBACKGROUND_SHELL_STR, menu);
 	menu->exec(pos);
 }
+
+std::wstring MyFileListWidget::getTemplateFileNameWithPathFromReg(std::wstring extension)
+{
+	std::wstring templateFileNameWithPath;
+	QSettings extensionReg(QString::fromStdWString(TEXT(HKEY_CLASSES_ROOT_STR)L"\\" + extension), QSettings::NativeFormat);
+	QVariant regValue = extensionReg.value(".", true);
+	if (regValue.typeId() == QMetaType::QString)//获取子级目录名字
+	{
+		QString subName = regValue.toString();
+		QSettings extensionRegSubReg(
+			QString::fromStdWString(
+				TEXT(HKEY_CLASSES_ROOT_STR)L"\\"
+				+ extension) + "\\"
+			+ subName + "\\ShellNew",
+			QSettings::NativeFormat);
+		regValue = extensionRegSubReg.value("FileName");
+		if (regValue.typeId() == QMetaType::QString)
+		{
+			QString templateFileNameWithPathQStr = regValue.toString();
+			templateFileNameWithPath = templateFileNameWithPathQStr.toStdWString();
+		}
+	}
+	//else if (regValue.typeId() == QMetaType::Bool && regValue.toBool())//如果默认没有内容
+	//{
+
+	//}
+	return templateFileNameWithPath;
+}
+
+bool MyFileListWidget::newFileProc(std::wstring extension, std::wstring path)
+{
+	std::wstring fileDescription;
+	SHFILEINFO info;
+	if (SHGetFileInfo(extension.c_str(), FILE_ATTRIBUTE_NORMAL, &info, sizeof(info), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES | SHGFI_ICON))
+	{
+		fileDescription = info.szTypeName;
+		fileDescription += extension;
+		return createNewFile(fileDescription, path, getTemplateFileNameWithPathFromReg(extension));
+	}
+	return false;
+}
+
+bool MyFileListWidget::createNewFile(std::wstring newFileName, std::wstring path, std::wstring templateFileNameWithPath)
+{
+	//templateFileNameWithPath = L"EXCEL12.xlsx";
+	newFileName = L"新建 " + newFileName; // 文件名
+	PathCompletion(path);
+	std::wstring::size_type extPos = newFileName.find_last_of(L".");
+	std::wstring newFileNameNoExtension = newFileName;
+	std::wstring newFileExtension;
+	if (extPos != std::wstring::npos)
+	{
+		newFileNameNoExtension = newFileName.substr(0, extPos);
+		newFileExtension = newFileName.substr(extPos);
+	}
+
+
+	//先读取模板文件
+	DWORD dwDesiredAccess = GENERIC_READ; // 访问模式
+	DWORD dwShareMode = FILE_SHARE_READ; // 共享模式
+	LPSECURITY_ATTRIBUTES lpSecurityAttributes = NULL; // 安全属性
+	DWORD dwCreationDisposition = OPEN_EXISTING; // 创建方式
+	DWORD dwFlagsAndAttributes = FILE_ATTRIBUTE_NORMAL; // 文件属性和标志
+	HANDLE hTemplateFile = NULL; // 模板文件句柄
+	HANDLE newFileHandle = NULL; // 新文件句柄
+#define OPENTEMPLATEFILE CreateFile(templateFileNameWithPath.c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
+#define CREATEFILE CreateFile((path + newFileName).c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
+#define CREATEFILEC(count) CreateFile((path + newFileNameNoExtension + L" (" + std::to_wstring(count) + L")" + newFileExtension).c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
+
+	//if (templateFileNameWithPath != L"")
+	//{
+	//	hTemplateFile = OPENTEMPLATEFILE;
+	//	if (INVALID_HANDLE_VALUE == hTemplateFile)
+	//		return false;//打开模板文件失败
+	//}
+	if (templateFileNameWithPath != L"")
+	{
+		BOOL bSuccess = CopyFile(templateFileNameWithPath.c_str(), (path + newFileName).c_str(), TRUE);
+		unsigned long long count = 1;
+		while (!bSuccess)
+		{
+			if (count == (unsigned long long)0)
+				return false;
+			bSuccess = CopyFile(templateFileNameWithPath.c_str(), (path + newFileNameNoExtension + L" (" + std::to_wstring(count) + L")" + newFileExtension).c_str(), TRUE);
+			count++;
+		}
+		return true;
+	}
+	else
+	{
+		dwDesiredAccess = GENERIC_WRITE;
+		dwShareMode = FILE_SHARE_WRITE;
+		lpSecurityAttributes = NULL;
+		dwCreationDisposition = CREATE_NEW;
+		dwFlagsAndAttributes = FILE_ATTRIBUTE_NORMAL;
+		//hTemplateFile = hTemplateFile;
+		//按照模板文件创建新文件
+		if (INVALID_HANDLE_VALUE == (newFileHandle = CREATEFILE))
+		{
+			unsigned long long count = 1;
+			while (INVALID_HANDLE_VALUE == (newFileHandle = CREATEFILEC(count)))
+			{
+				if (count == (unsigned long long)0)
+				{
+					if (hTemplateFile)
+						CloseHandle(hTemplateFile);
+					return false;
+				}
+				count++;
+			}
+		}
+		if (hTemplateFile)
+			CloseHandle(hTemplateFile);
+		CloseHandle(newFileHandle);
+
+		return true;
+	}
+}
+
 
 void MyFileListWidget::MenuClickedProc(QAction* action)
 {
@@ -645,19 +782,19 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		//newOptions->addAction("txt文本文档");
 		//获取右键新建文件子菜单列表项
 		QSettings shellNewContents(HKEY_CURRENT_USER_ShellNew_STR, QSettings::NativeFormat);
-		QVariant v = shellNewContents.value("Classes");
-		if (v.typeId() == QMetaType::QStringList)
+		QVariant extensionsValue = shellNewContents.value("Classes");
+		if (extensionsValue.typeId() == QMetaType::QStringList)
 		{
-			QStringList vl = v.toStringList();
-			vl.insert(0, ".txt");
+			QStringList extensionList = extensionsValue.toStringList();
+			extensionList.insert(0, ".txt");
 			std::cout << UTF8ToANSI("新建一栏扩展名：");
-			for (qsizetype i = 0; i < vl.size(); i++)
+			for (qsizetype i = 0; i < extensionList.size(); i++)
 			{
-				std::cout << vl[i].toStdString() << " ";
+				std::cout << extensionList[i].toStdString() << " ";
 
-				std::wstring extension = vl[i].toStdWString();
+				std::wstring extension = extensionList[i].toStdWString();
 				if (extension == L".library-ms" || extension == L".lnk"/* || extension == L"Folder"*/)
-					continue;
+					continue;//排除指定文件类型
 				if (extension.length() > 0)
 				{
 					SHFILEINFO info;
@@ -665,7 +802,31 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 					{
 						std::wstring type = info.szTypeName;
 						QIcon icon = QPixmap::fromImage(QImage::fromHICON(info.hIcon));
-						newOptions->addAction(icon, QString::fromStdWString(type));
+
+						newOptions->addAction(icon, QString::fromStdWString(type),
+							QKeySequence(),//加速键
+							this, [=]() {
+								if (pathsList.size() == 1)
+								{
+									newFileProc(extension, pathsList.front());
+								}
+								else if (pathsList.size() > 1)
+								{
+									MyMenu* newFilePathSelectionMenu = new MyMenu(this);
+									for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
+									{
+										newFilePathSelectionMenu->addAction(QIcon(), QString::fromStdWString(*iter),
+											QKeySequence(),
+											this, [=]() {
+												newFileProc(extension, *iter);
+											});
+									}
+
+									newFilePathSelectionMenu->exec(QCursor::pos());
+									newFilePathSelectionMenu->deleteLater();
+								}
+
+							});
 					}
 				}
 
@@ -1032,10 +1193,7 @@ bool MyFileListWidget::readConfigFile(std::wstring nameWithPath, bool whetherToC
 	}
 	return true;
 }
-bool MyFileListWidget::readConfigFileAndCreateItems(std::wstring nameWithPath)
-{
-	return readConfigFile(nameWithPath, true);
-}
+
 bool MyFileListWidget::writeConfigFile(std::wstring nameWithPath)
 {
 	using namespace std;
@@ -1120,21 +1278,41 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 				{
 					// Find it,remove it from tmpItemsMap
 					tmpItemsMap.erase(nameWithPath);
-					if (!itemsMap[nameWithPath].item && !isCreatingItem[path] && !isRemovingItem[path])
+
+					//使用TaskQueue后不再需要判断isCreatingItem和isRemovingItem
+					if (!itemsMap[nameWithPath].item/* && !isCreatingItem[path] && !isRemovingItem[path]*/)
 					{
-						sendCreateItemSignal(tmpwstringarray[0], path);
-						while (isCreatingItem[path]) Sleep(10);
+						ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
+						if (!isItemTaskInQueue(task))
+							addItemTask(task);
+						//sendCreateItemSignal(tmpwstringarray[0], path);
+						//while (isCreatingItem[path])
+						//{
+						//	if (checkFilesChangeThreadExit)
+						//		return;//退出线程
+						//	Sleep(10);
+						//}
 					}
 				}
 				else
 				{
 					// Can't find the file in itemsMap
 					// Send CreateItem Signal
-					if (!isCreatingItem[path] && !isRemovingItem[path])
-					{
-						sendCreateItemSignal(tmpwstringarray[0], path);//isCreatingItem = true;已经写在函数内
-						while (isCreatingItem[path]) Sleep(10);
-					}
+					
+					//使用TaskQueue后不再需要判断
+					//if (!isCreatingItem[path] && !isRemovingItem[path])
+					//{
+						ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
+						if (!isItemTaskInQueue(task))
+							addItemTask(task);
+						//sendCreateItemSignal(tmpwstringarray[0], path);//isCreatingItem = true;已经写在函数内
+						//while (isCreatingItem[path])
+						//{
+						//	if (checkFilesChangeThreadExit)
+						//		return;//退出线程
+						//	Sleep(10);
+						//}
+					//}
 				}
 				FileIndex++;
 			}
@@ -1152,12 +1330,19 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 			// 下面的注释因为：可能item并不存在而配置文件存在多余项需删除，
 			// 并且函数内有判断，所以此处不需要判断
 			//if (i->second.item != nullptr && i->second.path == path)
-			if (i->second.path == path)
+			if ((i->second.path == path) || (std::find(pathsList.begin(), pathsList.end(), i->second.path) == pathsList.end()))
 			{
-				sendRemoveItemSignal(i->second.name, i->second.path);
-				while (isRemovingItem[i->second.path]) Sleep(10);
+				ItemTask task = { &MyFileListWidget::sendRemoveItemSignalAndWriteConfig, i->second.name, i->second.path };
+				if (!isItemTaskInQueue(task))
+					addItemTask(task);
+				//while (isRemovingItem[i->second.path])
+				//{
+				//	if (checkFilesChangeThreadExit)
+				//		return;//退出线程
+				//	Sleep(10);
+				//}
 			}
-			tmpItemsMap.erase(i++);//////////////////////////////////////////
+			tmpItemsMap.erase(i++);
 		}
 		size_t npcBack = itemsNumPerColumn;
 		/*重新计算item大小和每列item的个数*/
@@ -1182,6 +1367,44 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		Sleep(10);
 	}
 }
+bool MyFileListWidget::isItemTaskInQueue(ItemTask task)
+{
+	mtxItemTaskQueue.lock();
+	const std::queue<ItemTask>& queue = itemTaskQueue;
+	const std::deque<ItemTask>& deque = queue._Get_container();
+	if ((!deque.empty()) && std::find(deque.begin(), deque.end(), task) != deque.end())
+	{
+		mtxItemTaskQueue.unlock();
+		return true;
+	}
+	mtxItemTaskQueue.unlock();
+	return false;
+}
+void MyFileListWidget::addItemTask(ItemTask task)
+{
+	mtxItemTaskQueue.lock();
+	itemTaskQueue.push(task);
+	mtxItemTaskQueue.unlock();
+}
+void MyFileListWidget::itemTaskExecuteProc()
+{
+	while (true)
+	{
+		mtxItemTaskQueue.lock();
+		if (!itemTaskQueue.empty())
+		{
+			ItemTask it = itemTaskQueue.front();
+			(this->*(it.task))(it.name, it.path);
+			itemTaskQueue.pop();
+			mtxItemTaskQueue.unlock();
+			continue;
+		}
+		mtxItemTaskQueue.unlock();
+		Sleep(100);
+	}
+}
+
+//unused-已停用
 //from csdn
 HBITMAP GetThumbnail(const std::wstring& filePath)
 {
@@ -1222,13 +1445,51 @@ HBITMAP GetThumbnail(const std::wstring& filePath)
 	return hThumbnail;
 }
 
+// By AI(Kimi)
+QImage HBITMAPToQImage(HBITMAP hBitmap, bool& flipped)
+{
+	// 获取位图信息
+	BITMAP bitmapInfo;
+	GetObject(hBitmap, sizeof(BITMAP), &bitmapInfo);
+
+	// 创建一个 QImage
+	QImage image(bitmapInfo.bmWidth, bitmapInfo.bmHeight, QImage::Format_ARGB32_Premultiplied);
+	image.fill(Qt::transparent); // 填充透明背景
+
+	// 创建一个内存设备上下文
+	HDC hdc = GetDC(NULL);
+	HDC hdcMem = CreateCompatibleDC(hdc);
+	HBITMAP hOldBitmap = (HBITMAP)SelectObject(hdcMem, hBitmap);
+
+	// 将位图数据复制到 QImage
+	GetBitmapBits(hBitmap, bitmapInfo.bmWidthBytes * bitmapInfo.bmHeight, image.bits());
+
+	// 恢复旧的位图
+	SelectObject(hdcMem, hOldBitmap);
+	DeleteDC(hdcMem);
+	ReleaseDC(NULL, hdc);
+
+	// 检查是否需要翻转
+	flipped = (bitmapInfo.bmHeight < 0);
+
+	// 如果高度为负值，表示位图是从底部开始存储的，需要翻转
+	if (bitmapInfo.bmHeight < 0)
+	{
+		image = image.mirrored(false, true);
+	}
+
+	return image;
+}
+
 void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 {
-	isCreatingItem[path] = true;
-	while (isRemovingItem[path]) Sleep(10);
+	//该函数一个有6处isCreating和isRemoving
+	//bool& isCreating = (isCreatingItem[path] = true);//修改创建状态=正在创建
+	//bool& isRemoving = isRemovingItem[path];
+	//while (isRemoving) Sleep(10);
 	if (!PathCompletion(path))
 	{
-		isCreatingItem[path] = false;
+		cvItemTaskFinished.notify_one();
 		return;
 	}
 	std::wstring nameWithPath = path;
@@ -1244,16 +1505,30 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		QImage pLWItemImage;
 		IShellItemImageFactory* ISIIFactory = nullptr;
 		HRESULT hr = SHCreateItemFromParsingName(nameWithPath.c_str(), nullptr, __uuidof(IShellItemImageFactory), (void**)&ISIIFactory);
+		//HRESULT hr = SHCreateItemFromParsingName(L"C:\\Users\\lyxyz5223\\Desktop\\QQ插件", nullptr, __uuidof(IShellItemImageFactory), (void**)&ISIIFactory);
 		if (SUCCEEDED(hr))
 		{
 			SIZE imageSize = { 256,256 };
 			HBITMAP hBitmap;
-			hr = ISIIFactory->GetImage(imageSize, SIIGBF_RESIZETOFIT, &hBitmap);
+			hr = ISIIFactory->GetImage(imageSize, SIIGBF_THUMBNAILONLY | SIIGBF_BIGGERSIZEOK, &hBitmap);
 			if (SUCCEEDED(hr))
-				pLWItemImage = QImage::fromHBITMAP(hBitmap);
-			BITMAP bmp;
-			GetObject(hBitmap, sizeof(BITMAP), (LPBYTE)&bmp);
-			std::cout << "\t\t" << bmp.bmHeight << "\n";
+			{
+				//pLWItemImage = QImage::fromHBITMAP(hBitmap);
+				bool flipped = false;
+				pLWItemImage = HBITMAPToQImage(hBitmap, flipped);
+				int a = pLWItemImage.height();
+				int b = pLWItemImage.heightMM();
+				std::cout << "height: " << a << std::endl;
+				std::cout << "heightMM: " << b << std::endl;
+				BITMAP bmp;
+				GetObject(hBitmap, sizeof(BITMAP), &bmp);
+				std::cout << "HBITMAP hBitmap->BITMAP bmp->bmp.bmHeight: " << bmp.bmHeight << "\n";
+				DeleteObject(&bmp);
+			}
+			else
+			{
+				std::cout << "No thumb image" << std::endl;
+			}
 			DeleteObject(hBitmap);
 			ISIIFactory->Release();
 		}
@@ -1294,9 +1569,22 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 			SHFILEINFO sfi;
 			DWORD_PTR dw_ptr = SHGetFileInfo(nameWithPath.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON);
 			if (dw_ptr)
-				pLWItemImage = QImage::fromHICON(sfi.hIcon);
+			{
+				//pLWItemImage = QImage::fromHICON(sfi.hIcon);
+
+				// 获取大号图像列表
+				IImageList* piml; 
+				HRESULT hr = SHGetImageList(SHIL_EXTRALARGE, IID_PPV_ARGS(&piml));
+				if (SUCCEEDED(hr))
+				{
+					HICON hico;
+					piml->GetIcon(sfi.iIcon, ILD_TRANSPARENT, &hico);
+					pLWItemImage = QImage::fromHICON(hico);
+					piml->Release();
+				}
+			}
 		}
-		std::wstring::size_type st;
+		std::wstring::size_type st = 0;
 		if (itemsMap[nameWithPath].position == -1)
 		{
 			/*判断是否已经放置图标*/
@@ -1333,7 +1621,7 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		pLWItem->move(itemPos);
 		//pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
 		connect(pLWItem, &MyFileListItem::removeSelfSignal, this, [=]() {
-			sendRemoveItemSignal(pLWItem->text().toStdWString(), pLWItem->getPath());
+			sendRemoveItemSignalAndWriteConfig(pLWItem->text().toStdWString(), pLWItem->getPath());
 			});
 		connect(pLWItem, &MyFileListItem::checkChange, this, [=](bool checkState) {
 			if (checkState)
@@ -1351,30 +1639,37 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		
 		/*将新添加的item加入map*/
 		auto position = itemsMap[nameWithPath].position;
+		std::cout << "[New Item]\n";
+		std::cout << "New item name: " << wstr2str_2ANSI(name) << "\n";
+		std::cout << "New item path: " << wstr2str_2ANSI(path) << "\n";
+		std::cout << "New item position: " << (position == -1 ? (long long)st : position) << "\n";
 		itemsMap[nameWithPath] = { pLWItem, name, path, (position == -1 ? (long long)st : position)};
 		pLWItem->show();
 	}
-	writeConfigFile(configFileNameWithPath);
-	isCreatingItem[path] = false;
+	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
 }
 
 void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 {
-	isRemovingItem[path] = true;
-	while (isCreatingItem[path]) Sleep(10);
+	//该函数共有4处isRemoving和isCreating
+	//bool& isRemoving = (isRemovingItem[path] = true);//修改删除状态=正在删除
+	//bool& isCreating = isCreatingItem[path];
+	//while (isCreating) Sleep(10);
 	std::wstring nameWithPath = path + name;
 	if (itemsMap.count(nameWithPath))
 	{
-		void*& item = itemsMap[nameWithPath].item;
+		ItemProp& ip = itemsMap[nameWithPath];
+		void*& item = ip.item;
 		if (item)
 		{
 			static_cast<MyFileListItem*>(item)->deleteLater();
 			item = nullptr;
 		}
+		if (ip.position < indexesState.size())
+			indexesState[ip.position] = L'0';
 		itemsMap.erase(nameWithPath);
 	}
-	writeConfigFile(configFileNameWithPath);
-	isRemovingItem[path] = false;
+	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
 }
 
 

@@ -106,6 +106,16 @@ std::wstring UTF8ToANSI(std::wstring utf8Text)
 	return wstr1;
 }
 
+std::wstring boolToWString(bool Bool)
+{
+	return (Bool ? L"true" : L"false");
+}
+
+std::string boolToString(bool Bool)
+{
+	return (Bool ? "true" : "false");
+}
+
 
 std::vector<std::string> split(std::string text, std::vector<std::string> delimiter/*separator,分隔符*/, std::string EscapeString /*char EscapeCharacter*/)
 {

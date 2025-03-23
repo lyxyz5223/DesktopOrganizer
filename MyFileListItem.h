@@ -110,7 +110,8 @@ private:
 	SelectionArea* selectionArea = nullptr;// 选择区域
 	DragArea* dragArea = nullptr;
 	QDrag* drag = nullptr;
-	double iconZoom = 3.0 / 4;//图标的缩放比例
+
+	double iconZoom = 3.0 / 5;//图标的缩放比例
 
 };
 
