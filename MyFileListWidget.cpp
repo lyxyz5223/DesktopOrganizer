@@ -1095,6 +1095,7 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 		pen.setWidth(1);
 		p.setPen(pen);
 		QLine line;
+		line.setLine(0, 0, 0, 0);
 		QRect titleBarGeometry = this->titleBarGeometry;
 		if (titleBarGeometry.width() == -1)
 			titleBarGeometry.setWidth(width());
@@ -1112,6 +1113,36 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 					titleBarGeometry.y() + titleBarGeometry.height())
 			);
 			break;
+		case TitleBarPositionMode::BottomLeft:
+			line.setPoints(
+				QPoint(0, height() - titleBarGeometry.height()),
+				QPoint(titleBarGeometry.width(), height() - titleBarGeometry.height())
+			);
+			titleBarGeometry.moveTo(0, height() - titleBarGeometry.height());
+			break;
+		case TitleBarPositionMode::TopLeft:
+			line.setPoints(
+				QPoint(0, titleBarGeometry.height()),
+				QPoint(titleBarGeometry.width(), titleBarGeometry.height())
+			);
+			titleBarGeometry.moveTo(0, 0);
+			break;
+		case TitleBarPositionMode::BottomCenter:
+			line.setPoints(
+				QPoint(
+					(width() - titleBarGeometry.width()) / 2,
+					height() - titleBarGeometry.height()
+				),
+				QPoint(
+					(width() - titleBarGeometry.width()) / 2 + titleBarGeometry.width(),
+					height() - titleBarGeometry.height()
+				)
+			);
+			titleBarGeometry.moveTo(
+				(width() - titleBarGeometry.width()) / 2,
+				height() - titleBarGeometry.height()
+			);
+			break;
 		case TitleBarPositionMode::TopCenter:
 			line.setPoints(
 				QPoint(
@@ -1123,7 +1154,30 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 					titleBarGeometry.height()
 				)
 			);
+			titleBarGeometry.moveTo((width() - titleBarGeometry.width()) / 2, 0);
 			break;
+		case TitleBarPositionMode::BottomRight:
+			line.setPoints(
+				QPoint(
+					width() - titleBarGeometry.width(),
+					height() - titleBarGeometry.height()
+				),
+				QPoint(width(), height() - titleBarGeometry.height())
+			);
+			titleBarGeometry.moveTo(
+				width() - titleBarGeometry.width(),
+				height() - titleBarGeometry.height()
+			);
+			break;
+		case TitleBarPositionMode::TopRight:
+			line.setPoints(
+				QPoint(
+					width() - titleBarGeometry.width(),
+					titleBarGeometry.height()
+				),
+				QPoint(width(), titleBarGeometry.height())
+			);
+			titleBarGeometry.moveTo(width() - titleBarGeometry.width(), 0);
 			break;
 		}
 		p.drawLine(line);
