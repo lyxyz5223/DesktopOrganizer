@@ -126,6 +126,7 @@ MyFileListWidget::MyFileListWidget(
 	QWidget* parent,//父亲控件
 	std::vector<std::wstring> pathsList,//文件路径列表
 	std::wstring config,//配置文件
+	bool isToolbox,//是否是窗口中的工具箱
 	bool showTitle)//是否显示标题栏
 	// : QWidget(parent)
 {
@@ -133,7 +134,13 @@ MyFileListWidget::MyFileListWidget(
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setWindowFlags(Qt::FramelessWindowHint);
 	this->parent = parent;
-	SetParent((HWND)winId(), (HWND)parent->winId());
+	if (parent)
+	{
+		if (isToolbox)
+			setParent(parent);
+		else
+			SetParent((HWND)winId(), (HWND)parent->winId());
+	}
 	//setParent(parent);
 	ifShowTitle = showTitle;
 	if (ifShowTitle)
@@ -703,12 +710,156 @@ void MyFileListWidget::MenuClickedProc(QAction* action)
 	//if (action->text() == "刷新");
 }
 
+
+void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
+{
+	if (e->buttons() == Qt::MouseButton::NoButton)
+	{
+		QPoint pos = e->pos();
+		if (pos.x() < borderWidth)//左边界
+		{
+			if (pos.y() < borderWidth)//左上角
+				setCursor(Qt::SizeFDiagCursor);//左上角或右下角
+			else if (pos.y() > height() - borderWidth)//左下角
+				setCursor(Qt::SizeBDiagCursor);//左下角或右上角
+			else//左边
+				setCursor(Qt::SizeHorCursor);
+		}
+		else if (pos.x() > width() - borderWidth)//右边界
+		{
+			if (pos.y() < borderWidth)//右上角
+				setCursor(Qt::SizeBDiagCursor);
+			else if (pos.y() > height() - borderWidth)//右下角
+				setCursor(Qt::SizeFDiagCursor);
+			else//右边
+				setCursor(Qt::SizeHorCursor);
+		}
+		else if (pos.y() < borderWidth)//上边界
+			setCursor(Qt::SizeVerCursor);
+		else if (pos.y() > height() - borderWidth)//下边界
+			setCursor(Qt::SizeVerCursor);
+		else
+		{
+			windowResize.resizeDirection = windowResize.None;
+			setCursor(Qt::CustomCursor);
+		}
+	}
+	if (e->buttons() & Qt::LeftButton)
+	{
+		//鼠标左键拖动
+		{
+			//RECT newRect = windowResize.originGeo;
+			//POINT mousePos = { 0 };
+			//GetCursorPos(&mousePos);
+			//POINT mouseOffset = { 0 };
+			//mouseOffset.x = mousePos.x - windowResize.mouseDownPos.x;
+			//mouseOffset.y = mousePos.y - windowResize.mouseDownPos.y;
+			//int left = windowResize.originGeo.left + mouseOffset.x;
+			//int top = windowResize.originGeo.top + mouseOffset.y;
+			//int right = windowResize.originGeo.right + mouseOffset.x;
+			//int bottom = windowResize.originGeo.bottom + mouseOffset.y;
+			//if (windowResize.resizeDirection & windowResize.Left)
+			//	newRect.left = ((left < windowResize.originGeo.right - 2 * borderWidth) ? left : (windowResize.originGeo.right - 2 * borderWidth));
+			//if (windowResize.resizeDirection & windowResize.Top)
+			//	newRect.top = ((top < windowResize.originGeo.bottom - 2 * borderWidth) ? top : (windowResize.originGeo.bottom - 2 * borderWidth));
+			//if (windowResize.resizeDirection & windowResize.Right)
+			//	newRect.right = ((right > windowResize.originGeo.left + 2 * borderWidth) ? right : (windowResize.originGeo.left + 2 * borderWidth));
+			//if (windowResize.resizeDirection & windowResize.Bottom)
+			//	newRect.bottom = ((bottom > windowResize.originGeo.top +  2 * borderWidth) ? bottom : (windowResize.originGeo.top + 2 * borderWidth));
+			//MoveWindow(
+			//	(HWND)this->winId(),
+			//	newRect.left, newRect.top, 
+			//	newRect.right - newRect.left,
+			//	newRect.bottom - newRect.top,
+			//	TRUE
+			//);
+			
+			
+			QRect geo = QRect(
+				windowResize.originGeo.topLeft(),
+				windowResize.originGeo.size()
+				);
+			QCursor cursor;
+			QPoint mouseOffset = cursor.pos() - windowResize.mouseDownPos;
+			int left = windowResize.originGeo.x() + mouseOffset.x();
+			int top = windowResize.originGeo.y() + mouseOffset.y();
+			//int right = originGeo.right() + mouseOffset.x();
+			//int bottom = originGeo.bottom() + mouseOffset.y();
+			int wid = windowResize.originGeo.width() + mouseOffset.x();
+			int hei = windowResize.originGeo.height() + mouseOffset.y();
+			if (windowResize.resizeDirection & windowResize.Left)
+				geo.setX((left < geo.right() - 2 * borderWidth) ? left : (geo.right() - 2 * borderWidth));
+			if (windowResize.resizeDirection & windowResize.Top)
+				geo.setY((top < geo.bottom() - 2 * borderWidth) ? top : (geo.bottom() - 2 * borderWidth));
+			if (windowResize.resizeDirection & windowResize.Right)
+				geo.setWidth((wid > 2 * borderWidth) ? wid : (2 * borderWidth));
+			if (windowResize.resizeDirection & windowResize.Bottom)
+				geo.setHeight((hei > 2 * borderWidth) ? hei : (2 * borderWidth));
+			qDebug() << "MouseMove:" << geo;
+			setGeometry(geo);
+		}
+
+
+		if (windowResize.resizeDirection == windowResize.None)
+			if (selectionArea)
+			{
+				QPoint p = e->pos();// mapToParent(e->pos());
+				selectionRect.setBottomRight(p);
+				selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
+					(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
+				selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
+					selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
+				selectionArea->update();
+				//selectionArea->mouseMoveProc(selectionRect);
+				//std::cout << selectionRect.x() << "," << selectionRect.y()
+				//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
+			}
+	}
+}
+
+
 void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 {
 	switch (e->button())
 	{
 	case Qt::MouseButton::LeftButton:
 	{
+		//当前窗口的大小修改（拖动边框预处理）
+		{
+			//GetWindowRect((HWND)this->winId(), &windowResize.originGeo);
+			//GetCursorPos(&windowResize.mouseDownPos);
+			QCursor cursor;
+			windowResize.originGeo = QRect(geometry().topLeft(), QSize(geometry().size()));
+			windowResize.mouseDownPos = cursor.pos();
+			QPoint pos = e->pos();
+			if (pos.x() < borderWidth)//左边界
+			{
+				if (pos.y() < borderWidth)//左上角
+					windowResize.resizeDirection = windowResize.TopLeft;
+				else if (pos.y() > height() - borderWidth)//左下角
+					windowResize.resizeDirection = windowResize.BottomLeft;
+				else//左边
+					windowResize.resizeDirection = windowResize.Left;
+			}
+			else if (pos.x() > width() - borderWidth)//右边界
+			{
+				if (pos.y() < borderWidth)//右上角
+					windowResize.resizeDirection = windowResize.TopRight;
+				else if (pos.y() > height() - borderWidth)//右下角
+					windowResize.resizeDirection = windowResize.BottomRight;
+				else//右边
+					windowResize.resizeDirection = windowResize.Right;
+			}
+			else if (pos.y() < borderWidth)//上边界
+				windowResize.resizeDirection = windowResize.Top;
+			else if (pos.y() > height() - borderWidth)//下边界
+				windowResize.resizeDirection = windowResize.Bottom;
+			else
+				windowResize.resizeDirection = windowResize.None;
+		}
+
+
+		//选中区域的reset
 		if (selectionArea)
 		{
 			QPoint p = e->pos();// mapToParent(e->pos());
@@ -733,6 +884,8 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 
 void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 {
+	windowResize.resizeDirection = windowResize.None;
+
 	switch (e->button())
 	{
 	case Qt::MouseButton::LeftButton:
@@ -761,12 +914,14 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 			"创建盒子",
 			this,
 			[=]() {
-				MyFileListWidget* newWidget = new MyFileListWidget(this, std::vector<std::wstring>(), L"1.ini");
+				MyFileListWidget* newWidget = new MyFileListWidget(this, std::vector<std::wstring>(), L"1.ini", true);
 				newWidget->setWindowTitle("SubTest");
 				newWidget->setIfShowTitle(true);
 				newWidget->move(relativePosTransition(0, curPos, this) - geometry().topLeft());
 				newWidget->setBackgroundColor(QColor(0, 0, 0, 100));
+				newWidget->setCanResize(true);
 				newWidget->resize(size() / 3);
+				//newWidget->setParent(this);
 				newWidget->show();
 			}
 		);
@@ -926,7 +1081,7 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 	QPainter p(this);
 	p.fillRect(rect(), backgroundColor);
 	p.save();
-	p.setPen(QPen(Qt::white, 1));
+	p.setPen(QPen(Qt::white, borderWidth));
 	p.drawRect(rect());
 	p.restore();
 	if (ifShowTitle)
@@ -937,37 +1092,96 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 			255 - backgroundColor.green(),
 			255 - backgroundColor.blue(),
 			255));
+		pen.setWidth(1);
 		p.setPen(pen);
-		p.drawLine(
-			QPoint(titleBarGeometry.x(),
+		QLine line;
+		QRect titleBarGeometry = this->titleBarGeometry;
+		if (titleBarGeometry.width() == -1)
+			titleBarGeometry.setWidth(width());
+		if (titleBarGeometry.height() == -1)
+			titleBarGeometry.setHeight(height());
+		QRect textRect = titleBarGeometry;
+		switch (titleBarPositionMode)
+		{
+		default:
+		case TitleBarPositionMode::Coord:
+			line.setPoints(
+				QPoint(titleBarGeometry.x(),
 				titleBarGeometry.y() + titleBarGeometry.height()),
-			QPoint(titleBarGeometry.x() + titleBarGeometry.width(),
-				titleBarGeometry.y() + titleBarGeometry.height())
-		);
+				QPoint(titleBarGeometry.x() + titleBarGeometry.width(),
+					titleBarGeometry.y() + titleBarGeometry.height())
+			);
+			break;
+		case TitleBarPositionMode::TopCenter:
+			line.setPoints(
+				QPoint(
+					(width() - titleBarGeometry.width()) / 2,
+					titleBarGeometry.height()
+				),
+				QPoint(
+					(width() - titleBarGeometry.width()) / 2 + titleBarGeometry.width(),
+					titleBarGeometry.height()
+				)
+			);
+			break;
+			break;
+		}
+		p.drawLine(line);
+		p.drawText(textRect, windowTitle(), QTextOption(Qt::AlignCenter));
 		p.restore();
 	}
 	QWidget::paintEvent(e);
 }
-void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
-{
-	if (e->buttons() & Qt::LeftButton)
-	{
-		if (selectionArea)
-		{
-			QPoint p = e->pos();// mapToParent(e->pos());
-			selectionRect.setBottomRight(p);
-			selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
-				(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
-			selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
-				selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
-			selectionArea->update();
-			//selectionArea->mouseMoveProc(selectionRect);
-			//std::cout << selectionRect.x() << "," << selectionRect.y()
-			//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
-		}
-	}
 
+bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
+{
+	MSG* msg = (MSG*)message;
+	switch (msg->message)
+	{
+	case WM_NCHITTEST:
+	{
+		//if (canResize)
+		//{
+		//	QCursor cursor = this->cursor();
+		//	QPoint pos = mapFromGlobal(cursor.pos());
+		//	int xPos = pos.x();
+		//	int yPos = pos.y();
+		//	if (xPos < borderWidth && yPos < borderWidth)//左上角
+		//		*result = HTTOPLEFT;
+		//	else if (xPos > width() - borderWidth && yPos < borderWidth)//右上角
+		//		*result = HTTOPRIGHT;
+		//	else if (xPos < borderWidth && yPos > height() - borderWidth)//左下角
+		//		*result = HTBOTTOMLEFT;
+		//	else if (xPos > width() - borderWidth && yPos > height() - borderWidth)//右下角
+		//		*result = HTBOTTOMRIGHT;
+		//	else if (xPos < borderWidth)//左边
+		//		*result = HTLEFT;
+		//	else if (xPos > width() - borderWidth)//右边
+		//		*result = HTRIGHT;
+		//	else if (yPos < borderWidth)//上边
+		//		*result = HTTOP;
+		//	else if (yPos > height() - borderWidth)//下边
+		//		*result = HTBOTTOM;
+		//	else
+		//		return false;
+		//	return true;
+		//}
+	}
+	break;
+	case WM_NCCALCSIZE:
+	{
+	}
+	break;
+	case WM_SIZE:   //要让窗体能够随着缩放改变，要响应WM_SIZE消息
+	{
+		
+	}
+	break;
+	}
+	return QWidget::nativeEvent(eventType, message, result);
 }
+
+
 bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 {
 	switch (event->type())

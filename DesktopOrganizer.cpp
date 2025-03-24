@@ -58,8 +58,11 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     pLWidget->setBackgroundColor(QColor(0, 0, 0, 100));
     //pLWidget->readConfigFile(L"config.ini");
 
-    pLWidget->resize(re.size() / 2);
-    pLWidget->move(0, 0);
+    pLWidget->resize(re.size() * 2 / 3);
+    pLWidget->move(
+        (re.width() - re.width() * 2 / 3) / 2,
+        (re.height() - re.height() * 2 / 3) / 2
+    );
     pLWidget->show();
 
 }

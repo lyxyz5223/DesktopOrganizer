@@ -37,7 +37,26 @@ private:// 属性定义区
 		BottomLeft,
 		BottomCenter,
 		BottomRight,
-	} titleBarPositionMode = TitleBarPositionMode::Coord;
+	} titleBarPositionMode = TitleBarPositionMode::TopCenter;
+	bool canResize = false;
+	struct WindowResize {
+		enum ResizeDirection {
+			None = 0x0000,
+			Left = 0x0001,
+			Right = 0x0010,
+			Top = 0x0100,
+			Bottom = 0x1000,
+			TopLeft = Top | Left,
+			TopRight = Top | Right,
+			BottomLeft = Bottom | Left,
+			BottomRight = Bottom | Right
+		} resizeDirection = None;
+		QPoint mouseDownPos = QPoint();
+		QRect originGeo = QRect();
+		//POINT mouseDownPos = { 0 };
+		//RECT originGeo = { 0 };
+	} windowResize;
+	double borderWidth = 3.0;
 
 	QIcon iconRefresh = QIcon(":/DesktopOrganizer/img/iconoir--refresh.svg");
 	QIcon iconCMD = QIcon(":/DesktopOrganizer/img/terminal.ico");
@@ -99,7 +118,7 @@ public:
 	//MyFileListWidget(QWidget* parent = nullptr);
 	MyFileListWidget(QWidget* parent,
 		std::vector<std::wstring> pathsList,
-		std::wstring config, bool showTitle = false);
+		std::wstring config, bool isToolbox = false, bool showTitle = false);
 	void initialize(QWidget* parent,
 		std::vector<std::wstring> pathsList,
 		std::wstring config);
@@ -142,6 +161,13 @@ public:
 		setMinimumHeight(titleBarGeometry.y() + titleBarGeometry.height());
 	}
 
+	//边框
+	void setCanResize(bool b) {
+		canResize = b;
+	}
+	bool getCanResize() const {
+		return canResize;
+	}
 
 	void setViewMode(MyFileListItem::ViewMode mode) {
 		viewMode = mode;
@@ -213,5 +239,5 @@ protected:
 	void dragMoveEvent(QDragMoveEvent* e) override;
 	void dragLeaveEvent(QDragLeaveEvent* e) override;
 	void dropEvent(QDropEvent* e) override;
-
+	bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result);
 };
