@@ -28,7 +28,8 @@ private:// 属性定义区
 	QWidget* parent = nullptr;// 父控件
 	QColor backgroundColor = QColor(255, 255, 255, 1);
 	bool ifShowTitle = false;
-	QRect titleBarGeometry = QRect(0, 0, -1, 20);
+	QRect titleBarGeometry = QRect(0, 0, 200, 20);
+	QRect titleBarFrameGeometry;// 用于鼠标移动窗口,在paintEvent函数中被修改
 	enum TitleBarPositionMode {
 		Coord,
 		TopLeft,
@@ -160,7 +161,12 @@ public:
 		titleBarGeometry = rect;
 		setMinimumHeight(titleBarGeometry.y() + titleBarGeometry.height());
 	}
-
+	void setTitleBarPositionMode(TitleBarPositionMode mode) {
+		titleBarPositionMode = mode;
+	}
+	TitleBarPositionMode getTitleBarPositionMode() const {
+		return titleBarPositionMode;
+	}
 	//边框
 	void setCanResize(bool b) {
 		canResize = b;

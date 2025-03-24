@@ -915,8 +915,9 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 			this,
 			[=]() {
 				MyFileListWidget* newWidget = new MyFileListWidget(this, std::vector<std::wstring>(), L"1.ini", true);
-				newWidget->setWindowTitle("SubTest");
+				newWidget->setWindowTitle("DesktopOrganizer SubWindow");
 				newWidget->setIfShowTitle(true);
+				newWidget->setTitleBarPositionMode(TitleBarPositionMode::TopCenter);
 				newWidget->move(relativePosTransition(0, curPos, this) - geometry().topLeft());
 				newWidget->setBackgroundColor(QColor(0, 0, 0, 100));
 				newWidget->setCanResize(true);
@@ -1101,7 +1102,7 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 			titleBarGeometry.setWidth(width());
 		if (titleBarGeometry.height() == -1)
 			titleBarGeometry.setHeight(height());
-		QRect textRect = titleBarGeometry;
+		QRect& textRect = titleBarGeometry;
 		switch (titleBarPositionMode)
 		{
 		default:
@@ -1180,7 +1181,9 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 			titleBarGeometry.moveTo(width() - titleBarGeometry.width(), 0);
 			break;
 		}
-		p.drawLine(line);
+		titleBarFrameGeometry = titleBarGeometry;
+		//p.drawLine(line);
+		p.drawRect(titleBarGeometry);
 		p.drawText(textRect, windowTitle(), QTextOption(Qt::AlignCenter));
 		p.restore();
 	}
