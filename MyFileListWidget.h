@@ -10,17 +10,50 @@
 #include <queue>
 #include <functional>
 #include <mutex>
+#include "lib/SQLite/sqlite3.h"
 
 class MyFileListWidget : public QWidget
 {
+private:
+	//计数，当对象创建(调用构造函数)时，计数+1
+	//析构时，计数-1
+	static long long useCount;
+public:
+	static long long getCount() {
+		return useCount;
+	}
+	enum ConfigMode {
+		File,
+		Database
+	};
+	struct WindowProp {
+		MyFileListWidget* window;
+		std::wstring title;
+	};
+
 	Q_OBJECT
 private:// 属性定义区
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
 	std::unordered_map<std::wstring/*name with path*/, ItemProp> itemsMap;// 文件列表
 	std::vector<std::wstring> pathsList;// 文件路径列表
 	std::wstring indexesState = L"0";// 按列计算的索引状态，1表示已占用，0表示未占用
-	std::wstring configFileNameWithPath;
-	std::mutex mtxConfigFile;// 读取/写入配置文件的互斥锁
+
+	//窗口id
+	long long windowId = 0;
+	//子窗口列表(包括本窗口)
+
+	std::unordered_map<long long/*windowId*/, WindowProp> windowsMap;
+
+	//配置相关
+	ConfigMode configMode = ConfigMode::File;
+	//ConfigMode == File
+	std::wstring configName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
+	std::wstring windowsConfigName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
+	static std::mutex mtxWindowsConfigFile;// 读取/写入窗口配置文件的互斥锁
+	static std::mutex mtxConfigFile;// 读取/写入配置文件的互斥锁
+	//ConfigMode == Database
+	sqlite3* database = nullptr;//数据库
+
 
 	//QFont itemFont;
 	Spacing itemSpacing = { 10, 10 };
@@ -112,26 +145,64 @@ private:// 属性定义区
 
 public:
 	~MyFileListWidget() {
+		//计数-1
+		useCount -= 1;
 		checkFilesChangeThreadExit = true;
 		for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
 			iter->join();
 	}
 	//MyFileListWidget(QWidget* parent = nullptr);
-	MyFileListWidget(QWidget* parent,
-		std::vector<std::wstring> pathsList,
-		std::wstring config, bool isToolbox = false, bool showTitle = false);
+	MyFileListWidget(QWidget* parent,//父亲控件
+		std::vector<std::wstring> pathsList,//文件路径列表
+		std::wstring config,//配置文件
+		std::wstring windowsConfig,//窗口配置文件
+		long long windowId,//窗口Id
+		bool isToolbox,//是否是窗口中的工具箱
+		bool showTitle,//是否显示标题栏
+		std::wstring title);
+	//初始化函数
 	void initialize(QWidget* parent,
 		std::vector<std::wstring> pathsList,
-		std::wstring config);
+		std::wstring config,
+		std::wstring windowsConfig);
 
-
+	//背景颜色设置
 	void setBackgroundColor(QColor color) {
 		backgroundColor = color;
 	}
 	QColor getBackgroundColor() const {
 		return backgroundColor;
 	}
-
+	void setWindowTitle(const QString& title) {
+		windowsMap[windowId].title = title.toStdWString();
+		writeConfig(windowsConfigName);
+		QWidget::setWindowTitle(title);
+	}
+	//创建子窗口
+	void createChildWindow(QWidget* parent = nullptr,
+		QString windowTitle = "DesktopOrganizer SubWindow",
+		std::vector<std::wstring> pathsList = std::vector<std::wstring>(),
+		std::wstring config = L"",
+		std::wstring windowsConfig = L"",
+		long long windowId = 0,
+		bool bShowTitle = true,
+		QPoint defaultPosition = QPoint(),
+		bool bShow = true) {
+		if (!parent)
+			parent = this;
+		MyFileListWidget* newWidget = new MyFileListWidget(parent, pathsList, config, windowsConfigName, windowId, true, bShowTitle, windowTitle.toStdWString());
+		newWidget->setWindowTitle(windowTitle);
+		newWidget->setIfShowTitle(true);
+		newWidget->setTitleBarPositionMode(TitleBarPositionMode::TopCenter);
+		//if (defaultPosition == QPoint())
+		//	defaultPosition = mapFromGlobal(QCursor::pos());
+		newWidget->move(defaultPosition);
+		newWidget->setBackgroundColor(QColor(0, 0, 0, 100));
+		newWidget->setCanResize(true);
+		newWidget->resize(size() / 3);
+		if(bShow)
+			newWidget->show();
+	}
 
 	//标题栏函数
 	bool getIfShowTitle() const {
@@ -178,42 +249,65 @@ public:
 	void setViewMode(MyFileListItem::ViewMode mode) {
 		viewMode = mode;
 	}
-	std::vector<std::wstring> splitForConfig(std::wstring text, std::wstring delimiter = L" "/*separator,分隔符*/, std::wstring EscapeString = L"" /*char EscapeCharacter*/);
-	std::vector<std::wstring> splitForShellExecuteFromRegedit(std::wstring text, std::wstring delimiter = L" ", std::wstring escapeString = L"");
 
+	//配置文件的分割使用
+	std::vector<std::wstring> splitForConfig(std::wstring text, std::wstring delimiter = L" "/*separator,分隔符*/, std::wstring EscapeString = L"" /*char EscapeCharacter*/);
+	//注册表字符串分割使用
+	std::vector<std::wstring> splitForShellExecuteFromRegedit(std::wstring text, std::wstring delimiter = L" ", std::wstring escapeString = L"");
+	//添加文件夹监测路径
 	void addPath(std::wstring path) {
 		pathsList.push_back(path);
 	}
-	bool readConfigFile(std::wstring nameWithPath, bool whetherToCreateItem = false);
-	bool writeConfigFile(std::wstring nameWithPath);
+
+	//配置文件
+	bool readWindowsConfig(std::wstring nameWithPath);
+	bool writeWindowsConfig(std::wstring nameWithPath);
+	bool readConfig(std::wstring nameWithPath, bool whetherToCreateItem = false);
+	bool writeConfig(std::wstring nameWithPath);
+	//数据库设置
+	void setSQLite3Database(sqlite3* pDatabase) {
+		this->database = pDatabase;
+	}
+	//获取数据库
+	sqlite3* getSQLite3Database() const {
+		return this->database;
+	}
+
+	//监视文件夹变动
 	void checkFilesChangeProc(std::wstring path);
 
+	//item添加删除
 	bool isItemTaskInQueue(ItemTask task);
 	void addItemTask(ItemTask task);
 	void itemTaskExecuteProc();
-
+	//发送创建item信号，并且写入配置
 	void sendCreateItemSignalAndWriteConfig(std::wstring name, std::wstring path) {
 		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTask); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
 		std::cout << "Send CearteItem Signal\n";
 		//isCreatingItem[path] = true;
 		emit createItemSignal(name, path);
 		cvItemTaskFinished.wait(ulMtxItemTask);
-		writeConfigFile(configFileNameWithPath);
+		writeConfig(configName);
 	}
+	//发送删除item信号，并且写入配置
 	void sendRemoveItemSignalAndWriteConfig(std::wstring name, std::wstring path) {
 		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTask); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
 		std::cout << "Send RemoveItem Signal\n";
 		//isRemovingItem[path] = true;
 		emit removeItemSignal(name, path);
 		cvItemTaskFinished.wait(ulMtxItemTask);
-		writeConfigFile(configFileNameWithPath);
+		writeConfig(configName);
 	}
+	//打开软件
 	static void openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd = SW_NORMAL, std::wstring workDirectory = L"", HWND msgOrErrWindow = NULL);
-	static HICON ExtractIconFromRegString(std::wstring regString, _Reserved_ HINSTANCE hInst = 0);
-	static QIcon ExtractQIconFromRegString(QString regString, _Reserved_ HINSTANCE hInst = 0) {
+	//从注册表中获取文件图标Icon和QIcon
+	static HICON ExtractIconFromRegString(std::wstring regString, HINSTANCE hInst = 0);
+	static QIcon ExtractQIconFromRegString(QString regString, HINSTANCE hInst = 0) {
 		return QIcon(QPixmap::fromImage(QImage::fromHICON(ExtractIconFromRegString(regString.toStdWString(), hInst))));
 	}
+	//从注册表中加载DLL内的字符串
 	static std::wstring LoadDllStringFromRegString(std::wstring regString);
+	//从注册表中加载菜单栏项目
 	void addActionsFromRegedit(QString path, MyMenu* menu);
 
 signals:

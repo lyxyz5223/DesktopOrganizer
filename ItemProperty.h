@@ -2,6 +2,7 @@
 
 #include <string>
 struct ItemProp {
+	long long windowId = 0;//窗口id，决定该item在哪一个window
 	void* item = 0;//Qt Item
 	std::wstring name = L"";//No path
 	std::wstring path = L"";// With '\' at the end

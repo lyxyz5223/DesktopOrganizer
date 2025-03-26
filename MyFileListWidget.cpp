@@ -42,8 +42,6 @@
 #include <string>
 
 // DataBase
-#define OTL_ODBC
-#include "./lib/otlv4.h"
 
 //My Lib
 #include "fileProc.h"
@@ -66,6 +64,10 @@
 #define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELL_STR "HKEY_CLASSES_ROOT\\Directory\\Background\\shell"
 #define HKEY_CLASSES_ROOT_DIRECTORY_BACKGROUND_SHELLEX_STR "HKEY_CLASSES_ROOT\\Directory\\Background\\shellex"
 
+
+long long MyFileListWidget::useCount = 0;// 对象计数
+std::mutex MyFileListWidget::mtxConfigFile; // 互斥锁定义
+std::mutex MyFileListWidget::mtxWindowsConfigFile; // 互斥锁定义
 
 
 bool isDigits(std::wstring wstr)
@@ -96,28 +98,30 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 	if (itemsNumPerColumn == 0)
 		itemsNumPerColumn = 1;
 }
-void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config)
+void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config, std::wstring windowsConfig)
 {
-	//该函数共有1处isCreatingItem和isRemovingItem
 	for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
 	{
 		PathCompletion(*iter);
-		//isCreatingItem[*iter] = (isRemovingItem[*iter] = false);
 	}
 	this->pathsList = pathsList;
 		
-	configFileNameWithPath = config;
-
+	configName = config;
+	this->windowsConfigName = windowsConfig;
 	selectionArea = new SelectionArea(this);
 	dragArea = new DragArea(this, itemsNumPerColumn, itemSize, itemSpacing);
 	dragArea->hide();
+	/*计算item大小和每列item的个数*/
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
-	if (pathsList.size() && !readConfigFile(config, true))
+	//读取配置文件
+	if (pathsList.size() && !readConfig(config, true))
+	{
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
-	/*计算item大小和每列item的个数*/
+		return;
+	}
 
-
+	//如果路径列表有内容，就创建Item
 	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
 		checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
 }
@@ -126,11 +130,28 @@ MyFileListWidget::MyFileListWidget(
 	QWidget* parent,//父亲控件
 	std::vector<std::wstring> pathsList,//文件路径列表
 	std::wstring config,//配置文件
+	std::wstring windowsConfig,//窗口配置文件
+	long long windowId,//窗口Id
 	bool isToolbox,//是否是窗口中的工具箱
-	bool showTitle)//是否显示标题栏
+	bool showTitle,//是否显示标题栏
+	std::wstring title)
 	// : QWidget(parent)
 {
+	//计数+1
+	useCount += 1;
+	std::cout << UTF8ToANSI("当前MyFileListWidget对象计数: ") << useCount << std::endl;
+	//读取Windows配置
+	if (windowsConfig.size() && !readWindowsConfig(windowsConfig))
+	{
+		QMessageBox::critical(this, "错误", "窗口配置文件读取失败！程序即将退出。");
+		return;
+	}
+	this->windowId = windowId;
+	windowsMap[windowId] = { this, title };
+	writeWindowsConfig(windowsConfig);
+
 	//setAttribute(Qt::WA_PaintOnScreen, true);
+	setAttribute(Qt::WA_DeleteOnClose);
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setWindowFlags(Qt::FramelessWindowHint);
 	this->parent = parent;
@@ -145,6 +166,8 @@ MyFileListWidget::MyFileListWidget(
 	ifShowTitle = showTitle;
 	if (ifShowTitle)
 		setMinimumHeight(titleBarGeometry.y() + titleBarGeometry.height());
+	setIfShowTitle(showTitle);
+
 	setMouseTracking(true);
 	installEventFilter(this);
 	setAcceptDrops(true);
@@ -222,7 +245,7 @@ MyFileListWidget::MyFileListWidget(
 
 	itemTaskThread = std::thread(&MyFileListWidget::itemTaskExecuteProc, this);
 	itemTaskThread.detach();
-	initialize(parent, pathsList, config);
+	initialize(parent, pathsList, config, windowsConfig);
 }
 
 
@@ -258,7 +281,7 @@ void MyFileListWidget::refreshSelf()
 
 	indexesState = L"0";
 	itemsMap.clear();
-	initialize(parent, pathsList, configFileNameWithPath);
+	initialize(parent, pathsList, configName, windowsConfigName);
 }
 
 void MyFileListWidget::openCMD(std::wstring path)
@@ -444,6 +467,7 @@ void MyFileListWidget::addActionsFromRegedit(QString path, MyMenu* menu)
 			else//链接了的字符串
 			{
 				name.removeFirst();
+				//展开注册表路径中的环境变量
 				WCHAR* tmp = new WCHAR[1];
 				DWORD len = ExpandEnvironmentStrings(name.toStdWString().c_str(), tmp, 0);
 				delete[] tmp;
@@ -911,26 +935,18 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		MyMenuAction* desktopOrganizerAction = new MyMenuAction(QIcon(), "Desktop Organizer");
 		MyMenu* desktopOrganizerMenu = new MyMenu(menu1);
 		desktopOrganizerMenu->addAction(
-			"创建盒子",
+			"Create new window",
 			this,
 			[=]() {
-				MyFileListWidget* newWidget = new MyFileListWidget(this, std::vector<std::wstring>(), L"1.ini", true);
-				newWidget->setWindowTitle("DesktopOrganizer SubWindow");
-				newWidget->setIfShowTitle(true);
-				newWidget->setTitleBarPositionMode(TitleBarPositionMode::TopCenter);
-				newWidget->move(relativePosTransition(0, curPos, this) - geometry().topLeft());
-				newWidget->setBackgroundColor(QColor(0, 0, 0, 100));
-				newWidget->setCanResize(true);
-				newWidget->resize(size() / 3);
-				//newWidget->setParent(this);
-				newWidget->show();
+				createChildWindow(this, "DesktopOrganizer SubWindow", std::vector<std::wstring>(), L"");
 			}
 		);
 		desktopOrganizerAction->setMenu(desktopOrganizerMenu);
 		//二级菜单：Widget控制
+		bool bClose = false;
 		MyMenuAction* myFileListWidgetAction = new MyMenuAction(QIcon(), "Widget Control");
 		MyMenu* widgetControlMenu = new MyMenu(menu1);
-		widgetControlMenu->addAction("关闭Widget", this, &MyFileListWidget::close);
+		widgetControlMenu->addAction("关闭Widget", this, [&] { /*MyFileListWidget::*/bClose = true; });
 		widgetControlMenu->addAction("退出软件", this, []() {exit(0); });
 		widgetControlMenu->addAction("(主窗口已嵌入桌面)")->setEnabled(false);
 		widgetControlMenu->addAction("脱离主窗口", this, [&]() {
@@ -1069,6 +1085,8 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		menu1->exec(curPos);
 		disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
 		menu1->deleteLater();
+		if (bClose)
+			close();
 	}
 		break;
 	default:
@@ -1454,86 +1472,252 @@ std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, st
 	return result;
 }
 
-bool MyFileListWidget::readConfigFile(std::wstring nameWithPath, bool whetherToCreateItem)
+bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 {
 	using namespace std;
-	std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
-
-	fstream fConfig(nameWithPath, ios::app | ios::out);
-	if (!fConfig.is_open())
-		return false;
-	else
+	switch (configMode)
 	{
-		//fConfig << "1.txt 1 1 1" << std::endl;//Test Write
+	case MyFileListWidget::File:
+	{
+		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
+		/*
+		id title
+		*/
+		fstream fConfig(nameWithPath, ios::app | ios::out);
+		if (!fConfig.is_open())
+			return false;//打开失败
 		fConfig.close();
 		fConfig.open(nameWithPath, ios::in);
 		if (fConfig.is_open())
 		{
-			//llong linesNum = 0;
-			//while (fConfig >> strTmp)
-			//	linesNum++;
-			//fConfig.clear();
-			//fConfig.seekg(0, ios::beg);
-#ifdef _DEBUG
-			wcout << str2wstr_2UTF8("配置文件：") << endl;
-#endif // _DEBUG
-			if (fConfig.peek() != ifstream::traits_type::eof())//判断文件是否为空，成立为空
+	#ifdef _DEBUG
+			cout << UTF8ToANSI("配置文件：") << endl;
+	#endif // !_DEBUG
+			//判断文件是否为空，成立为空
+			if (fConfig.peek() != ifstream::traits_type::eof())
 			{
 				size_t lineCount = 0;
 				wstring wstrLine;
 				string strLine;
 				while (getline(fConfig, strLine))
 				{
+					++lineCount;
 					std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
 					wstrLine = converter.from_bytes(strLine);
-					vector<wstring> conf = splitForConfig(wstrLine);
-					++lineCount;
-#ifdef _DEBUG
-					if (conf.size() < 3)
+					vector<wstring> conf = split(wstrLine);
+					if (conf.size() >= 2)
 					{
-						cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
-						continue;
+						for (auto iter = conf.begin() + 2; iter != conf.end();)
+						{
+							conf[1] += L" " + (*iter);
+							iter = conf.erase(iter);
+						}
+						if (!windowsMap.count(stoll(conf[0])))
+							windowsMap[stoll(conf[0])] = {
+								nullptr, conf[1]
+							};
+						else
+							windowsMap[stoll(conf[0])].title = conf[1];
 					}
-					cout << wstr2str_2ANSI(wstrLine) << endl;
-#else
-					if (conf.size() < 3)
-						continue;
-#endif // _DEBUG
-					itemsMap[conf[1]+conf[0]] = {
-						0, conf[0], conf[1], stoll(conf[2])
-					};
-					if (whetherToCreateItem)
-						createItem(conf[0], conf[1]);
+					else if (conf.size() == 1)
+					{
+						if (!windowsMap.count(stoll(conf[0])))
+							windowsMap[stoll(conf[0])] = {
+								nullptr, L""
+							};
+						else
+							windowsMap[stoll(conf[0])].title = L"";
+					}
 				}
+				//关闭文件
+				fConfig.close();
 			}
 		}
+		return true;
+	}
+	break;
+	case MyFileListWidget::Database:
+	{
+		//TODO: 数据库读取
+	}
+	break;
+	default:
+		break;
 	}
 	return true;
 }
 
-bool MyFileListWidget::writeConfigFile(std::wstring nameWithPath)
+bool MyFileListWidget::writeWindowsConfig(std::wstring nameWithPath)
 {
 	using namespace std;
-	std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
-
-	wstring delimiter = L" ";
-	ofstream outConfig;
-	outConfig.open(nameWithPath);
-	if (!outConfig.is_open())
-		return false;
-	else
+	switch (configMode)
 	{
-		string(*encodeType)(wstring) = wstr2str_2UTF8;
-		for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
+	case MyFileListWidget::File:
+	{
+		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
+
+		wstring delimiter = L" ";
+		ofstream outConfig;
+		outConfig.open(nameWithPath);
+		if (!outConfig.is_open())
+			return false;
+		else
 		{
-			outConfig << "\"" << encodeType(i->second.name);
-			outConfig << "\"" << encodeType(delimiter);
-			outConfig << "\"" << encodeType(i->second.path);
-			outConfig << "\"" << encodeType(delimiter)
-				<< i->second.position << endl;
-			outConfig.flush();
+			string(*encodeType)(wstring) = wstr2str_2UTF8;
+			for (auto i = windowsMap.begin(); i != windowsMap.end(); i++)
+			{
+				outConfig << i->first;
+				outConfig << encodeType(delimiter);
+				outConfig << encodeType(i->second.title) << endl;
+				outConfig.flush();
+			}
+			outConfig.close();
 		}
-		outConfig.close();
+		return true;
+	}
+	break;
+	case MyFileListWidget::Database:
+	{
+		//TODO: 数据库写入
+	}
+	break;
+	default:
+		break;
+	}
+	return true;
+}
+
+bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreateItem)
+{
+	switch (configMode)
+	{
+	case MyFileListWidget::File:
+	{
+		using namespace std;
+		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
+
+		fstream fConfig(nameWithPath, ios::app | ios::out);
+		if (!fConfig.is_open())
+			return false;
+		else
+		{
+			//fConfig << "1.txt 1 1 1" << std::endl;//Test Write
+			fConfig.close();
+			fConfig.open(nameWithPath, ios::in);
+			if (fConfig.is_open())
+			{
+				//llong linesNum = 0;
+				//while (fConfig >> strTmp)
+				//	linesNum++;
+				//fConfig.clear();
+				//fConfig.seekg(0, ios::beg);
+#ifdef _DEBUG
+				wcout << str2wstr_2UTF8("配置文件：") << endl;
+#endif // _DEBUG
+				if (fConfig.peek() != ifstream::traits_type::eof())//判断文件是否为空，成立为空
+				{
+					size_t lineCount = 0;
+					wstring wstrLine;
+					string strLine;
+					while (getline(fConfig, strLine))
+					{
+						std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+						wstrLine = converter.from_bytes(strLine);
+						vector<wstring> conf = splitForConfig(wstrLine);
+						++lineCount;
+#ifdef _DEBUG
+						if (conf.size() < 4)
+						{
+							cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
+							continue;
+						}
+						cout << wstr2str_2ANSI(wstrLine) << endl;
+#else
+						if (conf.size() < 4)
+							continue;
+#endif // _DEBUG
+						itemsMap[conf[1] + conf[0]] = {
+							stoll(conf[3]), 0, conf[0], conf[1], stoll(conf[2])
+						};
+						if (whetherToCreateItem)
+						{
+							auto& windowProp = windowsMap[stoll(conf[3])];
+							if (!windowProp.window)
+							{
+								//TODO: 子窗口创建
+								createChildWindow(
+									this,
+									QString::fromStdWString(windowProp.title),
+									std::vector<std::wstring>(),
+									this->configName + L"_" + conf[3],
+									windowsConfigName,
+									stoll(conf[3]),
+									true,
+									mapFromGlobal(QCursor::pos()),
+									true
+								);
+							}
+							if (windowProp.window)
+								windowProp.window->createItem(conf[0], conf[1]);
+						}
+					}
+				}
+				//关闭文件
+				fConfig.close();
+			}
+		}
+		return true;
+	}
+		break;
+	case MyFileListWidget::Database:
+	{
+		//TODO: 数据库读取
+	}
+		break;
+	default:
+		break;
+	}
+	return true;
+}
+
+bool MyFileListWidget::writeConfig(std::wstring nameWithPath)
+{
+	using namespace std;
+	switch (configMode)
+	{
+	case MyFileListWidget::File:
+	{
+		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
+
+		wstring delimiter = L" ";
+		ofstream outConfig;
+		outConfig.open(nameWithPath);
+		if (!outConfig.is_open())
+			return false;
+		else
+		{
+			string(*encodeType)(wstring) = wstr2str_2UTF8;
+			for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
+			{
+				outConfig << "\"" << encodeType(i->second.name);
+				outConfig << "\"" << encodeType(delimiter);
+				outConfig << "\"" << encodeType(i->second.path);
+				outConfig << "\"" << encodeType(delimiter)
+					<< i->second.position << endl;
+				outConfig.flush();
+			}
+			outConfig.close();
+		}
+		return true;
+	}
+		break;
+	case MyFileListWidget::Database:
+	{
+		//TODO: 数据库写入
+	}
+		break;
+	default:
+		break;
 	}
 	return true;
 }
@@ -1921,12 +2105,14 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 			});
 		
 		/*将新添加的item加入map*/
-		auto position = itemsMap[nameWithPath].position;
+		auto& itemProp = itemsMap[nameWithPath];
+		auto position = itemProp.position;
+		auto windowId = itemProp.windowId;
 		std::cout << "[New Item]\n";
 		std::cout << "New item name: " << wstr2str_2ANSI(name) << "\n";
 		std::cout << "New item path: " << wstr2str_2ANSI(path) << "\n";
 		std::cout << "New item position: " << (position == -1 ? (long long)st : position) << "\n";
-		itemsMap[nameWithPath] = { pLWItem, name, path, (position == -1 ? (long long)st : position)};
+		itemsMap[nameWithPath] = { windowId, pLWItem, name, path, (position == -1 ? (long long)st : position)};
 		pLWItem->show();
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
