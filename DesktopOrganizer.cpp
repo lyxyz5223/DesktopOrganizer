@@ -56,14 +56,16 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
         L"main"/*configFile or database name*/,
         L"windowsConfig", 0, false, false, L"Desktop Organizer Main Window");
     pLWidget->setViewMode(MyFileListItem::ViewMode::Icon);
-    pLWidget->setBackgroundColor(QColor(0, 0, 0, 100));
+    pLWidget->setBackgroundColor(QColor(255, 255, 255, 1));
     //pLWidget->readConfigFile(L"config.ini");
     pLWidget->setSQLite3Database(db);
-    pLWidget->resize(re.size() * 2 / 3);
-    pLWidget->move(
-        (re.width() - re.width() * 2 / 3) / 2,
-        (re.height() - re.height() * 2 / 3) / 2
-    );
+    pLWidget->resize(re.size());
+    pLWidget->move(0, 0);
+    //pLWidget->resize(re.size() * 2 / 3);
+    //pLWidget->move(
+    //    (re.width() - re.width() * 2 / 3) / 2,
+    //    (re.height() - re.height() * 2 / 3) / 2
+    //);
     pLWidget->show();
 
 }

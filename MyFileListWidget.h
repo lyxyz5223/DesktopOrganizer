@@ -14,6 +14,7 @@
 
 class MyFileListWidget : public QWidget
 {
+	Q_OBJECT
 private:
 	//计数，当对象创建(调用构造函数)时，计数+1
 	//析构时，计数-1
@@ -26,12 +27,12 @@ public:
 		File,
 		Database
 	};
-	struct WindowProp {
-		MyFileListWidget* window;
-		std::wstring title;
+	struct WindowInfo {
+		MyFileListWidget* window = nullptr;
+		std::wstring title = L"";
+		QRect rect = QRect();
 	};
 
-	Q_OBJECT
 private:// 属性定义区
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
 	std::unordered_map<std::wstring/*name with path*/, ItemProp> itemsMap;// 文件列表
@@ -40,9 +41,11 @@ private:// 属性定义区
 
 	//窗口id
 	long long windowId = 0;
+	//窗口id列表
+	static std::vector<long long> windowIdList;
+	static std::mutex mtxWindowIdList;// 读取/写入窗口id列表的互斥锁
 	//子窗口列表(包括本窗口)
-
-	std::unordered_map<long long/*windowId*/, WindowProp> windowsMap;
+	std::unordered_map<long long/*windowId*/, WindowInfo>& windowsMap;
 
 	//配置相关
 	ConfigMode configMode = ConfigMode::File;
@@ -60,6 +63,8 @@ private:// 属性定义区
 	//Spacing itemSpacing = { 15, 15 };
 	QWidget* parent = nullptr;// 父控件
 	QColor backgroundColor = QColor(255, 255, 255, 1);
+	QColor borderColor = QColor(0, 0, 0, 150);
+	QColor textColor = QColor(borderColor.red(), borderColor.green(), borderColor.blue(), 255);
 	bool ifShowTitle = false;
 	QRect titleBarGeometry = QRect(0, 0, 200, 20);
 	QRect titleBarFrameGeometry;// 用于鼠标移动窗口,在paintEvent函数中被修改
@@ -72,8 +77,9 @@ private:// 属性定义区
 		BottomCenter,
 		BottomRight,
 	} titleBarPositionMode = TitleBarPositionMode::TopCenter;
+
 	bool canResize = false;
-	struct WindowResize {
+	struct WindowMoveResize {
 		enum ResizeDirection {
 			None = 0x0000,
 			Left = 0x0001,
@@ -85,27 +91,28 @@ private:// 属性定义区
 			BottomLeft = Bottom | Left,
 			BottomRight = Bottom | Right
 		} resizeDirection = None;
+		bool move = false;
 		QPoint mouseDownPos = QPoint();
 		QRect originGeo = QRect();
 		//POINT mouseDownPos = { 0 };
 		//RECT originGeo = { 0 };
-	} windowResize;
+	} windowMoveResize;
 	double borderWidth = 3.0;
 
-	QIcon iconRefresh = QIcon(":/DesktopOrganizer/img/iconoir--refresh.svg");
-	QIcon iconCMD = QIcon(":/DesktopOrganizer/img/terminal.ico");
-	QIcon iconPaste = QIcon(":/DesktopOrganizer/img/tabler--clipboard.svg");
-	QIcon iconCopy = QIcon(":/DesktopOrganizer/img/tabler--copy.svg");
-	QIcon iconCut = QIcon(":/DesktopOrganizer/img/tabler--cut.svg");
-	QIcon iconMore = QIcon(":/DesktopOrganizer/img/tabler--dots-vertical.svg");
-	QIcon iconPlus = QIcon(":/DesktopOrganizer/img/tabler--plus.svg");
-	QIcon iconSquarePlus = QIcon(":/DesktopOrganizer/img/tabler--square-plus.svg");
-	QIcon iconSquareRoundedPlus = QIcon(":/DesktopOrganizer/img/tabler--square-rounded-plus.svg");
-	QIcon iconCirclePlus = QIcon(":/DesktopOrganizer/img/tabler--circle-plus.svg");
-	QIcon& iconAdd = iconPlus;
-	QIcon& iconSquareAdd = iconSquarePlus;
-	QIcon& iconSquareRoundedAdd = iconSquareRoundedPlus;
-	QIcon& iconCircleAdd = iconCirclePlus;
+	const QIcon iconRefresh = QIcon(":/DesktopOrganizer/img/iconoir--refresh.svg");
+	const QIcon iconCMD = QIcon(":/DesktopOrganizer/img/terminal.ico");
+	const QIcon iconPaste = QIcon(":/DesktopOrganizer/img/tabler--clipboard.svg");
+	const QIcon iconCopy = QIcon(":/DesktopOrganizer/img/tabler--copy.svg");
+	const QIcon iconCut = QIcon(":/DesktopOrganizer/img/tabler--cut.svg");
+	const QIcon iconMore = QIcon(":/DesktopOrganizer/img/tabler--dots-vertical.svg");
+	const QIcon iconPlus = QIcon(":/DesktopOrganizer/img/tabler--plus.svg");
+	const QIcon iconSquarePlus = QIcon(":/DesktopOrganizer/img/tabler--square-plus.svg");
+	const QIcon iconSquareRoundedPlus = QIcon(":/DesktopOrganizer/img/tabler--square-rounded-plus.svg");
+	const QIcon iconCirclePlus = QIcon(":/DesktopOrganizer/img/tabler--circle-plus.svg");
+	const QIcon& iconAdd = iconPlus;
+	const QIcon& iconSquareAdd = iconSquarePlus;
+	const QIcon& iconSquareRoundedAdd = iconSquareRoundedPlus;
+	const QIcon& iconCircleAdd = iconCirclePlus;
 	QIcon iconFolder;
 	QIcon iconLink;
 	//临时
@@ -128,7 +135,7 @@ private:// 属性定义区
 		std::wstring name;
 		std::wstring path;
 		bool operator==(const ItemTask& itemTask) const {
-			if ((this != nullptr) && (&itemTask) != nullptr)
+			if (this != nullptr)
 				return (task == itemTask.task && name == itemTask.name && path == itemTask.path);
 			return false;
 		}
@@ -160,11 +167,26 @@ public:
 		bool isToolbox,//是否是窗口中的工具箱
 		bool showTitle,//是否显示标题栏
 		std::wstring title);
+
+	MyFileListWidget(QWidget* parent,//父亲控件
+		std::wstring config,//配置文件
+		std::wstring windowsConfig,//窗口配置文件
+		long long windowId,//窗口Id
+		std::unordered_map<long long, WindowInfo>& windowsMap,//窗口映射表
+		bool showTitle,//是否显示标题栏
+		std::wstring title = L"");
 	//初始化函数
-	void initialize(QWidget* parent,
+	void refleshInitialize(QWidget* parent,
 		std::vector<std::wstring> pathsList,
 		std::wstring config,
 		std::wstring windowsConfig);
+	void publicInitialize(QWidget* parent,//父亲控件
+		std::wstring config,//配置文件
+		std::wstring windowsConfig,//窗口配置文件
+		long long windowId,//窗口Id
+		bool isToolbox,//是否是窗口中的工具箱
+		bool showTitle,//是否显示标题栏
+		std::wstring title = L"");
 
 	//背景颜色设置
 	void setBackgroundColor(QColor color) {
@@ -175,33 +197,34 @@ public:
 	}
 	void setWindowTitle(const QString& title) {
 		windowsMap[windowId].title = title.toStdWString();
-		writeConfig(windowsConfigName);
+		writeWindowsConfig(windowsConfigName);
 		QWidget::setWindowTitle(title);
 	}
 	//创建子窗口
-	void createChildWindow(QWidget* parent = nullptr,
+	MyFileListWidget* createChildWindow(QWidget* parent = nullptr,
 		QString windowTitle = "DesktopOrganizer SubWindow",
-		std::vector<std::wstring> pathsList = std::vector<std::wstring>(),
 		std::wstring config = L"",
 		std::wstring windowsConfig = L"",
 		long long windowId = 0,
 		bool bShowTitle = true,
-		QPoint defaultPosition = QPoint(),
+		QRect defaultGeometry = QRect(),
 		bool bShow = true) {
 		if (!parent)
 			parent = this;
-		MyFileListWidget* newWidget = new MyFileListWidget(parent, pathsList, config, windowsConfigName, windowId, true, bShowTitle, windowTitle.toStdWString());
+		MyFileListWidget* newWidget = new MyFileListWidget(parent, config, windowsConfig, windowId, windowsMap, bShowTitle, windowTitle.toStdWString());
 		newWidget->setWindowTitle(windowTitle);
 		newWidget->setIfShowTitle(true);
 		newWidget->setTitleBarPositionMode(TitleBarPositionMode::TopCenter);
 		//if (defaultPosition == QPoint())
 		//	defaultPosition = mapFromGlobal(QCursor::pos());
-		newWidget->move(defaultPosition);
-		newWidget->setBackgroundColor(QColor(0, 0, 0, 100));
+		newWidget->setGeometry(defaultGeometry);
+#ifdef _DEBUG
+		newWidget->setBackgroundColor(backgroundColor);
+#endif
 		newWidget->setCanResize(true);
-		newWidget->resize(size() / 3);
 		if(bShow)
 			newWidget->show();
+		return newWidget;
 	}
 
 	//标题栏函数
@@ -330,7 +353,13 @@ public slots:
 	bool createNewFile(std::wstring newFileName, std::wstring path, std::wstring templateFileNameWithPath);
 
 protected:
+	void focusInEvent(QFocusEvent* e) override;
+	void focusOutEvent(QFocusEvent* e) override;
 	void paintEvent(QPaintEvent* e) override;
+	//窗口移动事件，执行时保存窗口配置文件
+	void moveEvent(QMoveEvent* e) override;
+	//窗口大小改变事件，执行时保存窗口配置文件
+	void resizeEvent(QResizeEvent* e) override;
 	void mousePressEvent(QMouseEvent* e);
 	void mouseReleaseEvent(QMouseEvent* e);
 	void mouseMoveEvent(QMouseEvent* e);

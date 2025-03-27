@@ -68,6 +68,8 @@
 long long MyFileListWidget::useCount = 0;// 对象计数
 std::mutex MyFileListWidget::mtxConfigFile; // 互斥锁定义
 std::mutex MyFileListWidget::mtxWindowsConfigFile; // 互斥锁定义
+std::vector<long long> MyFileListWidget::windowIdList;//窗口id列表（id互斥）
+std::mutex MyFileListWidget::mtxWindowIdList; // 互斥锁定义
 
 
 bool isDigits(std::wstring wstr)
@@ -98,7 +100,7 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 	if (itemsNumPerColumn == 0)
 		itemsNumPerColumn = 1;
 }
-void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config, std::wstring windowsConfig)
+void MyFileListWidget::refleshInitialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config, std::wstring windowsConfig)
 {
 	for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
 	{
@@ -126,16 +128,7 @@ void MyFileListWidget::initialize(QWidget* parent, std::vector<std::wstring> pat
 		checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
 }
 
-MyFileListWidget::MyFileListWidget(
-	QWidget* parent,//父亲控件
-	std::vector<std::wstring> pathsList,//文件路径列表
-	std::wstring config,//配置文件
-	std::wstring windowsConfig,//窗口配置文件
-	long long windowId,//窗口Id
-	bool isToolbox,//是否是窗口中的工具箱
-	bool showTitle,//是否显示标题栏
-	std::wstring title)
-	// : QWidget(parent)
+void MyFileListWidget::publicInitialize(QWidget* parent, std::wstring config, std::wstring windowsConfig, long long windowId, bool isToolbox, bool showTitle, std::wstring title)
 {
 	//计数+1
 	useCount += 1;
@@ -146,8 +139,37 @@ MyFileListWidget::MyFileListWidget(
 		QMessageBox::critical(this, "错误", "窗口配置文件读取失败！程序即将退出。");
 		return;
 	}
+
+	windowIdList.push_back(windowId);
 	this->windowId = windowId;
-	windowsMap[windowId] = { this, title };
+	if (!windowsMap.count(windowId))
+		windowsMap[windowId] = { this, title, geometry() };
+	else
+	{
+		windowsMap[windowId].window = this;
+		QWidget::setWindowTitle(QString::fromStdWString(title));
+	}
+
+	//TODO: 读取完Windows配置文件需要创建所有需要的Window
+	//创建窗口
+	if (!isToolbox)
+	{
+		for (auto iter = windowsMap.begin(); iter != windowsMap.end(); iter++)
+		{
+			if (iter->second.window == nullptr)
+			{
+				iter->second.window = createChildWindow(this,
+					QString::fromStdWString(iter->second.title),
+					L"",
+					windowsConfig,
+					iter->first,
+					true,
+					iter->second.rect,
+					true
+				);
+			}
+		}
+	}
 	writeWindowsConfig(windowsConfig);
 
 	//setAttribute(Qt::WA_PaintOnScreen, true);
@@ -245,7 +267,35 @@ MyFileListWidget::MyFileListWidget(
 
 	itemTaskThread = std::thread(&MyFileListWidget::itemTaskExecuteProc, this);
 	itemTaskThread.detach();
-	initialize(parent, pathsList, config, windowsConfig);
+}
+//主窗口与子窗口（映射）
+MyFileListWidget::MyFileListWidget(
+	QWidget* parent,//父亲控件
+	std::vector<std::wstring> pathsList,//文件路径列表
+	std::wstring config,//配置文件
+	std::wstring windowsConfig,//窗口配置文件
+	long long windowId,//窗口Id
+	bool isToolbox,//是否是窗口中的工具箱，只有非工具箱才会读取配置文件创建新子窗口
+	bool showTitle,//是否显示标题栏
+	std::wstring title)
+	: windowsMap(*(new std::unordered_map<long long, WindowInfo>()))//创建窗口映射表
+	// : QWidget(parent)
+{
+	publicInitialize(parent, config, windowsConfig, windowId, isToolbox, showTitle, title);
+	refleshInitialize(parent, pathsList, config, windowsConfig);
+}
+//子窗口（非映射）
+MyFileListWidget::MyFileListWidget(QWidget* parent,//父亲控件
+	std::wstring config,//配置文件
+	std::wstring windowsConfig,//窗口配置文件
+	long long windowId,//窗口Id
+	std::unordered_map<long long, WindowInfo>& windowsMap,//窗口映射表
+	bool showTitle,//是否显示标题栏
+	std::wstring title)
+	: windowsMap(windowsMap)//引用窗口映射表
+{
+	publicInitialize(parent, config, windowsConfig, windowId, true, showTitle, title);
+	refleshInitialize(parent, std::vector<std::wstring>(), config, windowsConfig);
 }
 
 
@@ -281,7 +331,7 @@ void MyFileListWidget::refreshSelf()
 
 	indexesState = L"0";
 	itemsMap.clear();
-	initialize(parent, pathsList, configName, windowsConfigName);
+	refleshInitialize(parent, pathsList, configName, windowsConfigName);
 }
 
 void MyFileListWidget::openCMD(std::wstring path)
@@ -764,7 +814,7 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 			setCursor(Qt::SizeVerCursor);
 		else
 		{
-			windowResize.resizeDirection = windowResize.None;
+			windowMoveResize.resizeDirection = windowMoveResize.None;
 			setCursor(Qt::CustomCursor);
 		}
 	}
@@ -772,24 +822,24 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 	{
 		//鼠标左键拖动
 		{
-			//RECT newRect = windowResize.originGeo;
+			//RECT newRect = windowMoveResize.originGeo;
 			//POINT mousePos = { 0 };
 			//GetCursorPos(&mousePos);
 			//POINT mouseOffset = { 0 };
-			//mouseOffset.x = mousePos.x - windowResize.mouseDownPos.x;
-			//mouseOffset.y = mousePos.y - windowResize.mouseDownPos.y;
-			//int left = windowResize.originGeo.left + mouseOffset.x;
-			//int top = windowResize.originGeo.top + mouseOffset.y;
-			//int right = windowResize.originGeo.right + mouseOffset.x;
-			//int bottom = windowResize.originGeo.bottom + mouseOffset.y;
-			//if (windowResize.resizeDirection & windowResize.Left)
-			//	newRect.left = ((left < windowResize.originGeo.right - 2 * borderWidth) ? left : (windowResize.originGeo.right - 2 * borderWidth));
-			//if (windowResize.resizeDirection & windowResize.Top)
-			//	newRect.top = ((top < windowResize.originGeo.bottom - 2 * borderWidth) ? top : (windowResize.originGeo.bottom - 2 * borderWidth));
-			//if (windowResize.resizeDirection & windowResize.Right)
-			//	newRect.right = ((right > windowResize.originGeo.left + 2 * borderWidth) ? right : (windowResize.originGeo.left + 2 * borderWidth));
-			//if (windowResize.resizeDirection & windowResize.Bottom)
-			//	newRect.bottom = ((bottom > windowResize.originGeo.top +  2 * borderWidth) ? bottom : (windowResize.originGeo.top + 2 * borderWidth));
+			//mouseOffset.x = mousePos.x - windowMoveResize.mouseDownPos.x;
+			//mouseOffset.y = mousePos.y - windowMoveResize.mouseDownPos.y;
+			//int left = windowMoveResize.originGeo.left + mouseOffset.x;
+			//int top = windowMoveResize.originGeo.top + mouseOffset.y;
+			//int right = windowMoveResize.originGeo.right + mouseOffset.x;
+			//int bottom = windowMoveResize.originGeo.bottom + mouseOffset.y;
+			//if (windowMoveResize.resizeDirection & windowMoveResize.Left)
+			//	newRect.left = ((left < windowMoveResize.originGeo.right - 2 * borderWidth) ? left : (windowMoveResize.originGeo.right - 2 * borderWidth));
+			//if (windowMoveResize.resizeDirection & windowMoveResize.Top)
+			//	newRect.top = ((top < windowMoveResize.originGeo.bottom - 2 * borderWidth) ? top : (windowMoveResize.originGeo.bottom - 2 * borderWidth));
+			//if (windowMoveResize.resizeDirection & windowMoveResize.Right)
+			//	newRect.right = ((right > windowMoveResize.originGeo.left + 2 * borderWidth) ? right : (windowMoveResize.originGeo.left + 2 * borderWidth));
+			//if (windowMoveResize.resizeDirection & windowMoveResize.Bottom)
+			//	newRect.bottom = ((bottom > windowMoveResize.originGeo.top +  2 * borderWidth) ? bottom : (windowMoveResize.originGeo.top + 2 * borderWidth));
 			//MoveWindow(
 			//	(HWND)this->winId(),
 			//	newRect.left, newRect.top, 
@@ -800,31 +850,35 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 			
 			
 			QRect geo = QRect(
-				windowResize.originGeo.topLeft(),
-				windowResize.originGeo.size()
+				windowMoveResize.originGeo.topLeft(),
+				windowMoveResize.originGeo.size()
 				);
 			QCursor cursor;
-			QPoint mouseOffset = cursor.pos() - windowResize.mouseDownPos;
-			int left = windowResize.originGeo.x() + mouseOffset.x();
-			int top = windowResize.originGeo.y() + mouseOffset.y();
+			QPoint mouseOffset = cursor.pos() - windowMoveResize.mouseDownPos;
+			int left = windowMoveResize.originGeo.x() + mouseOffset.x();
+			int top = windowMoveResize.originGeo.y() + mouseOffset.y();
 			//int right = originGeo.right() + mouseOffset.x();
 			//int bottom = originGeo.bottom() + mouseOffset.y();
-			int wid = windowResize.originGeo.width() + mouseOffset.x();
-			int hei = windowResize.originGeo.height() + mouseOffset.y();
-			if (windowResize.resizeDirection & windowResize.Left)
+			int wid = windowMoveResize.originGeo.width() + mouseOffset.x();
+			int hei = windowMoveResize.originGeo.height() + mouseOffset.y();
+			if (windowMoveResize.resizeDirection & windowMoveResize.Left)
 				geo.setX((left < geo.right() - 2 * borderWidth) ? left : (geo.right() - 2 * borderWidth));
-			if (windowResize.resizeDirection & windowResize.Top)
+			if (windowMoveResize.resizeDirection & windowMoveResize.Top)
 				geo.setY((top < geo.bottom() - 2 * borderWidth) ? top : (geo.bottom() - 2 * borderWidth));
-			if (windowResize.resizeDirection & windowResize.Right)
+			if (windowMoveResize.resizeDirection & windowMoveResize.Right)
 				geo.setWidth((wid > 2 * borderWidth) ? wid : (2 * borderWidth));
-			if (windowResize.resizeDirection & windowResize.Bottom)
+			if (windowMoveResize.resizeDirection & windowMoveResize.Bottom)
 				geo.setHeight((hei > 2 * borderWidth) ? hei : (2 * borderWidth));
+			//窗口移动
+			if (windowMoveResize.move)
+				geo.moveTo(geo.topLeft() + mouseOffset);
 			qDebug() << "MouseMove:" << geo;
 			setGeometry(geo);
 		}
 
 
-		if (windowResize.resizeDirection == windowResize.None)
+
+		if (windowMoveResize.resizeDirection == windowMoveResize.None && !titleBarFrameGeometry.contains(e->pos()))
 			if (selectionArea)
 			{
 				QPoint p = e->pos();// mapToParent(e->pos());
@@ -844,42 +898,49 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 
 void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 {
+	raise();
+	setFocus();
 	switch (e->button())
 	{
 	case Qt::MouseButton::LeftButton:
 	{
 		//当前窗口的大小修改（拖动边框预处理）
 		{
-			//GetWindowRect((HWND)this->winId(), &windowResize.originGeo);
-			//GetCursorPos(&windowResize.mouseDownPos);
+			//GetWindowRect((HWND)this->winId(), &windowMoveResize.originGeo);
+			//GetCursorPos(&windowMoveResize.mouseDownPos);
 			QCursor cursor;
-			windowResize.originGeo = QRect(geometry().topLeft(), QSize(geometry().size()));
-			windowResize.mouseDownPos = cursor.pos();
+			windowMoveResize.originGeo = QRect(geometry().topLeft(), QSize(geometry().size()));
+			windowMoveResize.mouseDownPos = cursor.pos();
+			windowMoveResize.move = false;
 			QPoint pos = e->pos();
 			if (pos.x() < borderWidth)//左边界
 			{
 				if (pos.y() < borderWidth)//左上角
-					windowResize.resizeDirection = windowResize.TopLeft;
+					windowMoveResize.resizeDirection = windowMoveResize.TopLeft;
 				else if (pos.y() > height() - borderWidth)//左下角
-					windowResize.resizeDirection = windowResize.BottomLeft;
+					windowMoveResize.resizeDirection = windowMoveResize.BottomLeft;
 				else//左边
-					windowResize.resizeDirection = windowResize.Left;
+					windowMoveResize.resizeDirection = windowMoveResize.Left;
 			}
 			else if (pos.x() > width() - borderWidth)//右边界
 			{
 				if (pos.y() < borderWidth)//右上角
-					windowResize.resizeDirection = windowResize.TopRight;
+					windowMoveResize.resizeDirection = windowMoveResize.TopRight;
 				else if (pos.y() > height() - borderWidth)//右下角
-					windowResize.resizeDirection = windowResize.BottomRight;
+					windowMoveResize.resizeDirection = windowMoveResize.BottomRight;
 				else//右边
-					windowResize.resizeDirection = windowResize.Right;
+					windowMoveResize.resizeDirection = windowMoveResize.Right;
 			}
 			else if (pos.y() < borderWidth)//上边界
-				windowResize.resizeDirection = windowResize.Top;
+				windowMoveResize.resizeDirection = windowMoveResize.Top;
 			else if (pos.y() > height() - borderWidth)//下边界
-				windowResize.resizeDirection = windowResize.Bottom;
+				windowMoveResize.resizeDirection = windowMoveResize.Bottom;
 			else
-				windowResize.resizeDirection = windowResize.None;
+			{
+				windowMoveResize.resizeDirection = windowMoveResize.None;
+				if (titleBarFrameGeometry.contains(e->pos()))
+					windowMoveResize.move = true;
+			}
 		}
 
 
@@ -908,7 +969,7 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 
 void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 {
-	windowResize.resizeDirection = windowResize.None;
+	windowMoveResize.resizeDirection = windowMoveResize.None;
 
 	switch (e->button())
 	{
@@ -937,8 +998,29 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 		desktopOrganizerMenu->addAction(
 			"Create new window",
 			this,
-			[=]() {
-				createChildWindow(this, "DesktopOrganizer SubWindow", std::vector<std::wstring>(), L"");
+			[&]() {
+				signed long long wid = 0;
+				{
+					std::lock_guard<std::mutex> lock(mtxWindowIdList);
+					while ((wid++) >= 0)//wid为负数时表示id已经被占用完
+					{
+						if (std::find(windowIdList.begin(), windowIdList.end(), wid) == windowIdList.end())
+							break;
+					}
+					if (wid < 0)
+					{
+						QMessageBox::critical(this, "Error", "No available window id!");
+						return;
+					}
+				}
+				createChildWindow(this,
+					"DesktopOrganizer SubWindow",
+					L"",
+					windowsConfigName,
+					wid,
+					true,
+					QRect(mapFromGlobal(curPos), size() / 3),
+					true);
 			}
 		);
 		desktopOrganizerAction->setMenu(desktopOrganizerMenu);
@@ -1094,25 +1176,55 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 	}
 }
 
+void MyFileListWidget::focusInEvent(QFocusEvent* e)
+{
+	if (!pathsList.size())
+	{
+		borderWidth = 6;
+		backgroundColor.setAlpha(backgroundColor.alpha() + 50);
+		update();
+	}
+}
+void MyFileListWidget::focusOutEvent(QFocusEvent* e)
+{
+	if (!pathsList.size())
+	{
+		borderWidth = 3;
+		backgroundColor.setAlpha(backgroundColor.alpha() - 50);
+		update();
+	}
+}
+
 
 void MyFileListWidget::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
+	//QPen pen(QColor(
+	//	255 - backgroundColor.red(),
+	//	255 - backgroundColor.green(),
+	//	255 - backgroundColor.blue(),
+	//	255), borderWidth);
+	if (!borderColor.isValid())
+	{
+		borderColor = QColor(
+			255 - backgroundColor.red(),
+			255 - backgroundColor.green(),
+			255 - backgroundColor.blue(),
+			255);
+	}
+	QPen pen(borderColor, borderWidth);
+
 	p.fillRect(rect(), backgroundColor);
 	p.save();
-	p.setPen(QPen(Qt::white, borderWidth));
+	p.setPen(pen);
 	p.drawRect(rect());
 	p.restore();
 	if (ifShowTitle)
 	{
 		p.save();
-		QPen pen(QColor(
-			255 - backgroundColor.red(),
-			255 - backgroundColor.green(),
-			255 - backgroundColor.blue(),
-			255));
-		pen.setWidth(1);
-		p.setPen(pen);
+		QPen tPen = pen;
+		tPen.setWidth(pen.width() / 2);
+		p.setPen(tPen);
 		QLine line;
 		line.setLine(0, 0, 0, 0);
 		QRect titleBarGeometry = this->titleBarGeometry;
@@ -1202,10 +1314,23 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 		titleBarFrameGeometry = titleBarGeometry;
 		//p.drawLine(line);
 		p.drawRect(titleBarGeometry);
+		p.setPen(QPen(textColor));
 		p.drawText(textRect, windowTitle(), QTextOption(Qt::AlignCenter));
 		p.restore();
 	}
 	QWidget::paintEvent(e);
+}
+
+void MyFileListWidget::moveEvent(QMoveEvent* e)
+{
+	windowsMap[windowId].rect.moveTo(e->pos());
+	writeWindowsConfig(windowsConfigName);
+}
+
+void MyFileListWidget::resizeEvent(QResizeEvent* e)
+{
+	windowsMap[windowId].rect.setSize(e->size());
+	writeWindowsConfig(windowsConfigName);
 }
 
 bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
@@ -1424,7 +1549,7 @@ std::vector<std::wstring> MyFileListWidget::splitForShellExecuteFromRegedit(std:
 }
 std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, std::wstring delimiter/*separator,分隔符*/, std::wstring EscapeString /*char EscapeCharacter*/)
 {
-	std::vector<std::wstring> result(3);
+	std::vector<std::wstring> result(4);
 	std::vector<std::wstring> res = split(text, delimiter, EscapeString);
 	for (int i = 0; i < 2; i++)
 	{
@@ -1466,9 +1591,20 @@ std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, st
 		else
 			return std::vector<std::wstring>();
 	}
+	int p = 2;
 	for (auto iter = res.begin(); iter != res.end(); iter++)
 		if (isDigits(*iter))
-			result[2] = *iter;
+		{
+			result[p] = *iter;
+			if (p == 2)
+				p += 1;
+		}
+	for (auto iter = result.rbegin(); iter != result.rend(); )
+	{
+		if (iter->length() > 0)
+			break;
+		iter = std::reverse_iterator(result.erase(std::next(iter).base()));
+	}
 	return result;
 }
 
@@ -1481,7 +1617,12 @@ bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 	{
 		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
 		/*
-		id title
+		id: 窗口id
+		title: 窗口名字
+		cx: x坐标
+		cy: y坐标
+		width: 窗口宽度
+		height: 窗口高度
 		*/
 		fstream fConfig(nameWithPath, ios::app | ios::out);
 		if (!fConfig.is_open())
@@ -1491,7 +1632,7 @@ bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 		if (fConfig.is_open())
 		{
 	#ifdef _DEBUG
-			cout << UTF8ToANSI("配置文件：") << endl;
+			cout << UTF8ToANSI("Windows配置文件：") << endl;
 	#endif // !_DEBUG
 			//判断文件是否为空，成立为空
 			if (fConfig.peek() != ifstream::traits_type::eof())
@@ -1502,31 +1643,67 @@ bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 				while (getline(fConfig, strLine))
 				{
 					++lineCount;
+#ifdef _DEBUG
+					cout << strLine << endl;
+#endif // !_DEBUG
 					std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
 					wstrLine = converter.from_bytes(strLine);
 					vector<wstring> conf = split(wstrLine);
-					if (conf.size() >= 2)
-					{
-						for (auto iter = conf.begin() + 2; iter != conf.end();)
+					try {
+						if (conf.size() >= 5)
 						{
-							conf[1] += L" " + (*iter);
-							iter = conf.erase(iter);
+							wstring cx = *(conf.end() - 4),
+								cy = *(conf.end() - 3),
+								width = *(conf.end() - 2),
+								height = *(conf.end() - 1);
+							bool bCx = isDigits(cx);
+							bool bCy = isDigits(cy);
+							bool bWidth = isDigits(width);
+							bool bHeight = isDigits(height);
+							string errMsg = "error:";
+							if (!bCx)
+								errMsg += " cx,";
+							if (!bCy)
+								errMsg += " cy,";
+							if (!bWidth)
+								errMsg += " width,";
+							if (!bHeight)
+								errMsg += " height,";
+							if (errMsg.back() == ',')
+								errMsg.pop_back();
+							if (errMsg != "error:")
+							{
+								errMsg += " should be number!";
+								throw errMsg;
+							}
+
+							wstring windowTitle;
+							if (conf.size() >= 6)
+							{
+								for (auto iter = conf.begin() + 2; iter != conf.end() - 4;)
+								{
+									conf[1] += L" " + (*iter);
+									iter = conf.erase(iter);
+								}
+								windowTitle = conf[1];
+							}
+							if (!windowsMap.count(stoll(conf[0])))
+								windowsMap[stoll(conf[0])] = {
+									nullptr, windowTitle,
+									QRect(stoi(cx), stoi(cy), stoi(width), stoi(height))
+								};
+							else
+							{
+								auto& windowProp = windowsMap[stoll(conf[0])];
+								windowProp.title = windowTitle;
+								windowProp.rect = QRect(stoi(cx), stoi(cy), stoi(width), stoi(height));
+							}
 						}
-						if (!windowsMap.count(stoll(conf[0])))
-							windowsMap[stoll(conf[0])] = {
-								nullptr, conf[1]
-							};
-						else
-							windowsMap[stoll(conf[0])].title = conf[1];
 					}
-					else if (conf.size() == 1)
-					{
-						if (!windowsMap.count(stoll(conf[0])))
-							windowsMap[stoll(conf[0])] = {
-								nullptr, L""
-							};
-						else
-							windowsMap[stoll(conf[0])].title = L"";
+					catch(string errMsg) {
+						cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
+						cout << UTF8ToANSI(errMsg) << endl;
+						continue;
 					}
 				}
 				//关闭文件
@@ -1556,9 +1733,9 @@ bool MyFileListWidget::writeWindowsConfig(std::wstring nameWithPath)
 	{
 		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
 
-		wstring delimiter = L" ";
+		string delimiter = " ";
 		ofstream outConfig;
-		outConfig.open(nameWithPath);
+		outConfig.open(nameWithPath, ios::out);
 		if (!outConfig.is_open())
 			return false;
 		else
@@ -1567,8 +1744,13 @@ bool MyFileListWidget::writeWindowsConfig(std::wstring nameWithPath)
 			for (auto i = windowsMap.begin(); i != windowsMap.end(); i++)
 			{
 				outConfig << i->first;
-				outConfig << encodeType(delimiter);
-				outConfig << encodeType(i->second.title) << endl;
+				outConfig << delimiter;
+				outConfig << encodeType(i->second.title) << delimiter
+					<< to_string(i->second.rect.x()) << delimiter
+					<< to_string(i->second.rect.y()) << delimiter
+					<< to_string(i->second.rect.width()) << delimiter
+					<< to_string(i->second.rect.height())
+					<< endl;
 				outConfig.flush();
 			}
 			outConfig.close();
@@ -1601,7 +1783,6 @@ bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreat
 			return false;
 		else
 		{
-			//fConfig << "1.txt 1 1 1" << std::endl;//Test Write
 			fConfig.close();
 			fConfig.open(nameWithPath, ios::in);
 			if (fConfig.is_open())
@@ -1644,16 +1825,20 @@ bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreat
 							auto& windowProp = windowsMap[stoll(conf[3])];
 							if (!windowProp.window)
 							{
+								QRect newWindowRect(
+									QPoint((width() - width() / 3) / 2,
+										(height() - height() / 3) / 2),
+									size() / 3
+								);
 								//TODO: 子窗口创建
-								createChildWindow(
+								windowProp.window = createChildWindow(
 									this,
 									QString::fromStdWString(windowProp.title),
-									std::vector<std::wstring>(),
-									this->configName + L"_" + conf[3],
+									L""/*this->configName + L"_" + conf[3]*/,
 									windowsConfigName,
 									stoll(conf[3]),
 									true,
-									mapFromGlobal(QCursor::pos()),
+									QRect(newWindowRect),
 									true
 								);
 							}
@@ -1689,7 +1874,7 @@ bool MyFileListWidget::writeConfig(std::wstring nameWithPath)
 	{
 		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
 
-		wstring delimiter = L" ";
+		string delimiter = " ";
 		ofstream outConfig;
 		outConfig.open(nameWithPath);
 		if (!outConfig.is_open())
@@ -1700,10 +1885,11 @@ bool MyFileListWidget::writeConfig(std::wstring nameWithPath)
 			for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
 			{
 				outConfig << "\"" << encodeType(i->second.name);
-				outConfig << "\"" << encodeType(delimiter);
+				outConfig << "\"" << delimiter;
 				outConfig << "\"" << encodeType(i->second.path);
-				outConfig << "\"" << encodeType(delimiter)
-					<< i->second.position << endl;
+				outConfig << "\"" << delimiter
+					<< i->second.position << delimiter
+					<< i->second.windowId << endl;
 				outConfig.flush();
 			}
 			outConfig.close();

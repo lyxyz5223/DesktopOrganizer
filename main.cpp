@@ -15,10 +15,14 @@ static int callback(void* NotUsed, int argc, char** argv, char** azColName) {
 }
 /*
 数据库结构：
-id tableName title
+id tableName title cx cy width height
 id: 窗口id
 tableName: 数据表名称
 title: 窗口名字
+cx: x坐标
+cy: y坐标
+width: 窗口宽度
+height: 窗口高度
 
 数据表结构：
 name path position
