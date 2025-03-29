@@ -99,6 +99,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="FileChangesChecker.cpp" />
     <ClCompile Include="fileProc.cpp" />
     <ClCompile Include="DragArea.cpp" />
     <ClCompile Include="MyFileListItem.cpp" />
@@ -111,7 +112,7 @@
     </ClCompile>
     <ClCompile Include="MyMenuAction.cpp" />
     <ClCompile Include="SelectionArea.cpp" />
-    <ClCompile Include="stringProcess.cpp" />
+    <ClCompile Include="StringProcess.cpp" />
     <QtRcc Include="DesktopOrganizer.qrc" />
     <QtUic Include="DesktopOrganizer.ui" />
     <QtMoc Include="DesktopOrganizer.h" />
@@ -121,6 +122,7 @@
     <ResourceCompile Include="DesktopOrganizer.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FileChangesChecker.h" />
     <ClInclude Include="fileProc.h" />
     <QtMoc Include="DragArea.h" />
     <ClInclude Include="ItemProperty.h" />

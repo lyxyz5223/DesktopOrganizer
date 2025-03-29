@@ -34,7 +34,7 @@
 #include <iostream>
 #include <vector>
 //#include <array>
-#include "stringProcess.h"
+#include "StringProcess.h"
 #include <cstdlib>
 #include <thread>
 #include <codecvt>
@@ -45,6 +45,8 @@
 
 //My Lib
 #include "fileProc.h"
+#include <QFileInfo>
+#include "FileChangesChecker.h"
 //声明&定义
 //注册表
 //根目录
@@ -100,14 +102,16 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 	if (itemsNumPerColumn == 0)
 		itemsNumPerColumn = 1;
 }
-void MyFileListWidget::refleshInitialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config, std::wstring windowsConfig)
+
+
+void MyFileListWidget::refreshInitialize(QWidget* parent, std::vector<std::wstring> pathsList, std::wstring config, std::wstring windowsConfig)
 {
 	for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
 	{
 		PathCompletion(*iter);
 	}
 	this->pathsList = pathsList;
-		
+
 	configName = config;
 	this->windowsConfigName = windowsConfig;
 	selectionArea = new SelectionArea(this);
@@ -124,8 +128,39 @@ void MyFileListWidget::refleshInitialize(QWidget* parent, std::vector<std::wstri
 	}
 
 	//如果路径列表有内容，就创建Item
+	//for (auto i = pathsList.begin(); i != pathsList.end(); i++)
+	//	checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
 	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
-		checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
+	{
+		//checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
+		FileChangesChecker* fcc = new FileChangesChecker(*i);
+		fileChangesCheckerList.push_back(fcc);
+		std::wstring path = *i;
+		fcc->setCallback([this, path](FileChangesChecker* checker, FileChangesChecker::FileChanges fileChanges, void* parameter) {
+			ItemTask itemTask;
+			itemTask.name = fileChanges.newName;
+			itemTask.path = path + fileChanges.newName;
+			switch (fileChanges.action)
+			{
+			case FileChangesChecker::Action::Added:
+			{
+				itemTask.task = &MyFileListWidget::sendCreateItemSignalAndWriteConfig;
+				addItemTaskIfNotInQueue(itemTask);
+				break;
+			}
+			case FileChangesChecker::Action::Removed:
+			{
+				itemTask.task = &MyFileListWidget::sendRemoveItemSignalAndWriteConfig;
+				addItemTaskIfNotInQueue(itemTask);
+				break;
+			}
+			default:
+				break;
+			}
+			//addItemTaskIfNotInQueue(*(std::wstring*)parameter);
+			}, &path);
+		fcc->start();
+	}
 }
 
 void MyFileListWidget::publicInitialize(QWidget* parent, std::wstring config, std::wstring windowsConfig, long long windowId, bool isToolbox, bool showTitle, std::wstring title)
@@ -267,6 +302,35 @@ void MyFileListWidget::publicInitialize(QWidget* parent, std::wstring config, st
 
 	itemTaskThread = std::thread(&MyFileListWidget::itemTaskExecuteProc, this);
 	itemTaskThread.detach();
+
+	std::thread sizeCalculateThread(
+		[&]() {
+			while (true)
+			{
+				//size_t npcBackup = itemsNumPerColumn;
+				/*重新计算item大小和每列item的个数*/
+				changeItemSizeAndNumbersPerColumn();
+				// 变小
+				for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
+				{
+					int xIndex = i->second.position / itemsNumPerColumn + 1;
+					int yIndex = i->second.position % itemsNumPerColumn + 1;
+					QPoint itemPos = QPoint(
+						(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column,
+						(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line
+					);
+					if (i->second.item)
+					{
+						if (static_cast<MyFileListItem*>(i->second.item)->size() != itemSize)
+							emit static_cast<MyFileListItem*>(i->second.item)->adjustSizeSignal();
+						if (itemPos != ((MyFileListItem*)i->second.item)->pos())
+							emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
+					}
+				}
+				Sleep(100);
+			}
+		});
+	sizeCalculateThread.detach();
 }
 //主窗口与子窗口（映射）
 MyFileListWidget::MyFileListWidget(
@@ -282,7 +346,7 @@ MyFileListWidget::MyFileListWidget(
 	// : QWidget(parent)
 {
 	publicInitialize(parent, config, windowsConfig, windowId, isToolbox, showTitle, title);
-	refleshInitialize(parent, pathsList, config, windowsConfig);
+	refreshInitialize(parent, pathsList, config, windowsConfig);
 }
 //子窗口（非映射）
 MyFileListWidget::MyFileListWidget(QWidget* parent,//父亲控件
@@ -295,21 +359,27 @@ MyFileListWidget::MyFileListWidget(QWidget* parent,//父亲控件
 	: windowsMap(windowsMap)//引用窗口映射表
 {
 	publicInitialize(parent, config, windowsConfig, windowId, true, showTitle, title);
-	refleshInitialize(parent, std::vector<std::wstring>(), config, windowsConfig);
+	refreshInitialize(parent, std::vector<std::wstring>(), config, windowsConfig);
 }
 
 
 void MyFileListWidget::refreshSelf()
 {
-	checkFilesChangeThreadExit = true;
-	for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
+	//checkFilesChangeThreadExit = true;
+	//for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
+	//{
+	//	std::thread th;
+	//	th.swap(*iter);
+	//	if (th.joinable())
+	//		th.join();
+	//}
+	//checkFilesChangeThreadExit = false;
+	for (auto iter = fileChangesCheckerList.begin(); iter != fileChangesCheckerList.end(); iter++)
 	{
-		std::thread th;
-		th.swap(*iter);
-		if (th.joinable())
-			th.join();
+		(*iter)->stop();
+		delete (*iter);
 	}
-	checkFilesChangeThreadExit = false;
+	fileChangesCheckerList.clear();
 	if (dragArea)
 	{
 		dragArea->deleteLater();
@@ -321,7 +391,6 @@ void MyFileListWidget::refreshSelf()
 		selectionArea->deleteLater();
 		selectionArea = nullptr;
 	}
-
 	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		if (iter->second.item)
 			static_cast<MyFileListItem*>(iter->second.item)->QPushButton::deleteLater();
@@ -331,7 +400,7 @@ void MyFileListWidget::refreshSelf()
 
 	indexesState = L"0";
 	itemsMap.clear();
-	refleshInitialize(parent, pathsList, configName, windowsConfigName);
+	refreshInitialize(parent, pathsList, configName, windowsConfigName);
 }
 
 void MyFileListWidget::openCMD(std::wstring path)
@@ -1469,7 +1538,7 @@ void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 
 }
 
-// 当不接受QDrag的drop事件时调用
+// 当QDrag离开当前窗口
 void MyFileListWidget::dragLeaveEvent(QDragLeaveEvent* e)
 {
 	if (dragArea)
@@ -1482,6 +1551,47 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 {
 	if(dragArea)
 		dragArea->hide();
+	if (pathsList.size())
+	{
+		std::wstring goalPath;
+		if (pathsList.size() > 1)
+		{
+			QMenu menu(this);
+			for (std::wstring path : pathsList)
+			{
+				QAction* action = new QAction(QString::fromStdWString(path), &menu);
+				connect(action, &QAction::triggered, this, [&goalPath, action]() {
+					goalPath = action->text().toStdWString();
+					});
+				menu.addAction(action);
+			}
+			menu.exec(QCursor::pos());
+		}
+		else
+			goalPath = pathsList[0];
+		if (!goalPath.empty())
+		{
+			PathCompletion(goalPath);
+			std::wstring localFiles;
+			for (QUrl url : e->mimeData()->urls())
+			{
+				std::wstring localFile = url.toLocalFile().replace("/", "\\").toStdWString();
+				//std::wstring fileName = url.fileName().toStdWString();
+				localFiles += localFile + L'\0';
+			}
+			const wchar_t* pFrom = localFiles.c_str();
+			const wchar_t* pTo = (goalPath).data();
+			SHFILEOPSTRUCT fileOp = { 0 };
+			//ZeroMemory(&fileOp, sizeof(fileOp));
+			fileOp.fAnyOperationsAborted = 0;
+			fileOp.hwnd = (HWND)this->winId();
+			fileOp.pFrom = pFrom;
+			fileOp.pTo = pTo;
+			fileOp.wFunc = FO_COPY;
+			//fileOp.fFlags
+			SHFileOperation(&fileOp);
+		}
+	}
 }
 
 
@@ -1915,6 +2025,9 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 	cFilePath = (WCHAR*)path.c_str();
 	while (!checkFilesChangeThreadExit)
 	{
+		Sleep(10);
+
+		std::lock_guard<std::mutex> lock(mtxItemTaskQueue);//互斥锁加锁
 		intptr_t FileIndex = 0;
 		WIN32_FIND_DATA ffd;
 		LARGE_INTEGER filesize;
@@ -1959,22 +2072,20 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 				{
 					// Find it,remove it from tmpItemsMap
 					tmpItemsMap.erase(nameWithPath);
-
-					//使用TaskQueue后不再需要判断isCreatingItem和isRemovingItem
-					if (!itemsMap[nameWithPath].item/* && !isCreatingItem[path] && !isRemovingItem[path]*/)
+					if (!itemsMap[nameWithPath].item)
 					{
 						ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
 						if (!isItemTaskInQueue(task))
-							addItemTask(task);
+							addItemTaskIfNotInQueue(task);
 					}
 				}
 				else
 				{
 					// Can't find the file in itemsMap
-					// Send CreateItem Signal		
+					// Send CreateItem Signal
 					ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
 					if (!isItemTaskInQueue(task))
-						addItemTask(task);
+						addItemTaskIfNotInQueue(task);
 				}
 				FileIndex++;
 			}
@@ -1991,9 +2102,13 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 		{
 			if ((i->second.path == path) || (std::find(pathsList.begin(), pathsList.end(), i->second.path) == pathsList.end()))
 			{
-				ItemTask task = { &MyFileListWidget::sendRemoveItemSignalAndWriteConfig, i->second.name, i->second.path };
-				if (!isItemTaskInQueue(task))
-					addItemTask(task);
+				if (itemsMap.count(i->first))
+				{
+					ItemTask task = { &MyFileListWidget::sendRemoveItemSignalAndWriteConfig, i->second.name, i->second.path };
+					/*MessageBox((HWND)winId(), path.c_str(), i->second.name.c_str(), 0);*/
+					if (!isItemTaskInQueue(task))
+						addItemTaskIfNotInQueue(task);
+				}
 			}
 			tmpItemsMap.erase(i++);
 		}
@@ -2017,27 +2132,36 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 					emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
 			}
 		}
-		Sleep(10);
 	}
 }
+
 bool MyFileListWidget::isItemTaskInQueue(ItemTask task)
 {
-	mtxItemTaskQueue.lock();
 	const std::queue<ItemTask>& queue = itemTaskQueue;
 	const std::deque<ItemTask>& deque = queue._Get_container();
 	if ((!deque.empty()) && std::find(deque.begin(), deque.end(), task) != deque.end())
 	{
-		mtxItemTaskQueue.unlock();
 		return true;
 	}
-	mtxItemTaskQueue.unlock();
 	return false;
 }
 void MyFileListWidget::addItemTask(ItemTask task)
 {
-	mtxItemTaskQueue.lock();
+	std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
 	itemTaskQueue.push(task);
-	mtxItemTaskQueue.unlock();
+}
+void MyFileListWidget::addItemTaskIfNotInQueue(ItemTask task)
+{
+	//std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
+	const std::queue<ItemTask>& queue = itemTaskQueue;
+	const std::deque<ItemTask>& deque = queue._Get_container();
+	if (deque.empty() || std::find(deque.begin(), deque.end(), task) == deque.end())
+	{
+		itemTaskQueue.push(task);
+#ifdef _DEBUG
+		std::cout << "Add item task:" << wstr2str_2ANSI(task.name) << std::endl;
+#endif
+	}
 }
 void MyFileListWidget::itemTaskExecuteProc()
 {
@@ -2047,13 +2171,19 @@ void MyFileListWidget::itemTaskExecuteProc()
 		if (!itemTaskQueue.empty())
 		{
 			ItemTask it = itemTaskQueue.front();
+#ifdef _DEBUG
+			std::cout << "Execute item task:" << wstr2str_2ANSI(it.name) << std::endl;
+#endif
 			(this->*(it.task))(it.name, it.path);
+#ifdef _DEBUG
+			std::cout << "Finish executing item task:" << wstr2str_2ANSI(it.name) << std::endl;
+#endif
 			itemTaskQueue.pop();
 			mtxItemTaskQueue.unlock();
 			continue;
 		}
 		mtxItemTaskQueue.unlock();
-		Sleep(100);
+		Sleep(10);
 	}
 }
 
@@ -2136,10 +2266,7 @@ QImage HBITMAPToQImage(HBITMAP hBitmap, bool& flipped)
 
 void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 {
-	//该函数一个有6处isCreating和isRemoving
-	//bool& isCreating = (isCreatingItem[path] = true);//修改创建状态=正在创建
-	//bool& isRemoving = isRemovingItem[path];
-	//while (isRemoving) Sleep(10);
+	std::lock_guard<std::mutex> lock(mtxItemsMap);//互斥锁加锁
 	if (!PathCompletion(path))
 	{
 		cvItemTaskFinished.notify_one();
@@ -2148,11 +2275,46 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 	std::wstring nameWithPath = path;
 	nameWithPath += name;
 	if (!itemsMap.count(nameWithPath))
-		itemsMap[nameWithPath] = ItemProp();
+		itemsMap[nameWithPath] = { windowId, nullptr, name, path, -1 };
 	if (!itemsMap[nameWithPath].item)
 	{
 		/*创建新item*/
 		MyFileListItem* pLWItem = new MyFileListItem(this, itemSize);
+		std::wstring::size_type st = 0;
+		if (itemsMap[nameWithPath].position == -1)
+		{
+			/*判断是否已经放置图标*/
+			st = indexesState.find(L'0');
+			if (st == std::wstring::npos)
+			{
+				st = indexesState.length();
+				indexesState += L'0';
+			}
+			indexesState.replace(st, 1, L"1");
+		}
+		else
+		{
+			st = itemsMap[nameWithPath].position;
+			for (size_t i = indexesState.length(); i < st + 2; i++)
+				indexesState += L"0";
+			indexesState[st] = '1';
+		}
+		if (itemsNumPerColumn == 0)
+			itemsNumPerColumn = 1;
+		/*计算新添加的item的合适位置的index*/
+		int xIndex = st / itemsNumPerColumn + 1;
+		int yIndex = st % itemsNumPerColumn + 1;
+		
+		/*将新添加的item加入map*/
+		auto& itemProp = itemsMap[nameWithPath];
+		auto position = itemProp.position;
+		auto windowId = itemProp.windowId;
+		std::cout << "[New Item]\n";
+		std::cout << "New item name: " << wstr2str_2ANSI(name) << "\n";
+		std::cout << "New item path: " << wstr2str_2ANSI(path) << "\n";
+		std::cout << "New item position: " << (position == -1 ? (long long)st : position) << "\n";
+		itemsMap[nameWithPath] = { windowId, pLWItem, name, path, (position == -1 ? (long long)st : position)};
+
 
 		/*新添加的item的图标*/
 		QImage pLWItemImage;
@@ -2237,30 +2399,6 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 				}
 			}
 		}
-		std::wstring::size_type st = 0;
-		if (itemsMap[nameWithPath].position == -1)
-		{
-			/*判断是否已经放置图标*/
-			st = indexesState.find(L'0');
-			if (st == std::wstring::npos)
-			{
-				st = indexesState.length();
-				indexesState += L'0';
-			}
-			indexesState.replace(st, 1, L"1");
-		}
-		else
-		{
-			st = itemsMap[nameWithPath].position;
-			for (size_t i = indexesState.length(); i < st + 2; i++)
-				indexesState += L"0";
-			indexesState[st] = '1';
-		}
-		if (itemsNumPerColumn == 0)
-			itemsNumPerColumn = 1;
-		/*计算新添加的item的合适位置的index*/
-		int xIndex = st / itemsNumPerColumn + 1;
-		int yIndex = st % itemsNumPerColumn + 1;
 		pLWItem->setText(wstr2str_2UTF8(name).c_str());
 		pLWItem->setViewMode(viewMode);
 		pLWItem->setPath(path);
@@ -2273,9 +2411,9 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 			(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line);
 		pLWItem->move(itemPos);
 		//pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
-		connect(pLWItem, &MyFileListItem::removeSelfSignal, this, [=]() {
-			sendRemoveItemSignalAndWriteConfig(pLWItem->text().toStdWString(), pLWItem->getPath());
-			});
+		//connect(pLWItem, &MyFileListItem::removeSelfSignal, this, [=]() {
+		//	sendRemoveItemSignalAndWriteConfig(pLWItem->text().toStdWString(), pLWItem->getPath());
+		//	});
 		connect(pLWItem, &MyFileListItem::checkChange, this, [=](bool checkState) {
 			if (checkState)
 			{
@@ -2289,16 +2427,6 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 					dragArea->removeItem(name, path);
 			}
 			});
-		
-		/*将新添加的item加入map*/
-		auto& itemProp = itemsMap[nameWithPath];
-		auto position = itemProp.position;
-		auto windowId = itemProp.windowId;
-		std::cout << "[New Item]\n";
-		std::cout << "New item name: " << wstr2str_2ANSI(name) << "\n";
-		std::cout << "New item path: " << wstr2str_2ANSI(path) << "\n";
-		std::cout << "New item position: " << (position == -1 ? (long long)st : position) << "\n";
-		itemsMap[nameWithPath] = { windowId, pLWItem, name, path, (position == -1 ? (long long)st : position)};
 		pLWItem->show();
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
@@ -2306,28 +2434,25 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 
 void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 {
-	//该函数共有4处isRemoving和isCreating
-	//bool& isRemoving = (isRemovingItem[path] = true);//修改删除状态=正在删除
-	//bool& isCreating = isCreatingItem[path];
-	//while (isCreating) Sleep(10);
+	std::lock_guard<std::mutex> lock(mtxItemsMap);//互斥锁加锁
 	std::wstring nameWithPath = path + name;
 	if (itemsMap.count(nameWithPath))
 	{
 		ItemProp& ip = itemsMap[nameWithPath];
-		void*& item = ip.item;
+		void* item = ip.item;
+		if (ip.position < indexesState.size())
+			indexesState[ip.position] = L'0';
+		itemsMap.erase(nameWithPath);
 		if (item)
 		{
 			static_cast<MyFileListItem*>(item)->deleteLater();
 			item = nullptr;
 		}
-		if (ip.position < indexesState.size())
-			indexesState[ip.position] = L'0';
-		itemsMap.erase(nameWithPath);
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
 }
 
-
+//获取文件改动，同步
 //void MyFileListWidget::threadReadDirectoryChangesProc(std::wstring path)
 //{
 //	typedef long long llong;

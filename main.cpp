@@ -1,7 +1,7 @@
 #include "DesktopOrganizer.h"
 #include <QtWidgets/QApplication>
 // DataBase
-#include "stringProcess.h"
+#include "StringProcess.h"
 #include ".\\lib\\SQLite\\sqlite3.h"
 #include <iostream>
 

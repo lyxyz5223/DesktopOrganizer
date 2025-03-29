@@ -46,7 +46,7 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="stringProcess.cpp">
+    <ClCompile Include="StringProcess.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="MyFileListItem.cpp">
@@ -68,6 +68,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="MyMenu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FileChangesChecker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -102,6 +105,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MyMenu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FileChangesChecker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

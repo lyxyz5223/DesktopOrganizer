@@ -9,7 +9,7 @@
 
 //C++
 #include <iostream>
-#include "stringProcess.h"
+#include "StringProcess.h"
 
 //Windows
 #include <Windows.h>

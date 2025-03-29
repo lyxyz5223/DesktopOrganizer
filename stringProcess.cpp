@@ -1,4 +1,4 @@
-#include "stringProcess.h"
+#include "StringProcess.h"
 #include <Windows.h>
 std::string wstr2str_2UTF8(std::wstring text)
 {

@@ -11,6 +11,7 @@
 #include <functional>
 #include <mutex>
 #include "lib/SQLite/sqlite3.h"
+#include "FileChangesChecker.h"
 
 class MyFileListWidget : public QWidget
 {
@@ -35,7 +36,10 @@ public:
 
 private:// 属性定义区
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
+
 	std::unordered_map<std::wstring/*name with path*/, ItemProp> itemsMap;// 文件列表
+	std::mutex mtxItemsMap;// 读取/写入文件列表的互斥锁
+
 	std::vector<std::wstring> pathsList;// 文件路径列表
 	std::wstring indexesState = L"0";// 按列计算的索引状态，1表示已占用，0表示未占用
 
@@ -126,7 +130,8 @@ private:// 属性定义区
 	size_t itemsNumPerColumn = 0;
 	QSize itemSize;
 	DragArea* dragArea = nullptr;// 选中文件拖动区域
-	std::vector<std::thread> checkFilesChangeThreads;
+	//std::vector<std::thread> checkFilesChangeThreads;
+	std::vector<FileChangesChecker*> fileChangesCheckerList;
 	bool checkFilesChangeThreadExit = false;
 	//typedef void (MyFileListWidget::* ItemTask) (std::wstring name, std::wstring path);
 	//任务队列，当有创建和删除item的信号时，都会添加任务到队列，随后将按照顺序依次执行队列任务
@@ -148,15 +153,18 @@ private:// 属性定义区
 	std::thread itemTaskThread;
 	//bool itemTaskFinished = false;//GUI线程是否已经完成了创建/删除item的信号
 	std::condition_variable cvItemTaskFinished;
-	std::mutex mtxItemTask;// 创建/删除item过程中的互斥锁
+	std::mutex mtxItemTaskExecute;// 创建/删除item过程中的互斥锁
 
 public:
 	~MyFileListWidget() {
 		//计数-1
 		useCount -= 1;
 		checkFilesChangeThreadExit = true;
-		for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
-			iter->join();
+		//for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
+		//	iter->join();
+		for (auto iter = fileChangesCheckerList.begin(); iter != fileChangesCheckerList.end(); iter++)
+			delete* iter;
+		fileChangesCheckerList.clear();
 	}
 	//MyFileListWidget(QWidget* parent = nullptr);
 	MyFileListWidget(QWidget* parent,//父亲控件
@@ -176,7 +184,7 @@ public:
 		bool showTitle,//是否显示标题栏
 		std::wstring title = L"");
 	//初始化函数
-	void refleshInitialize(QWidget* parent,
+	void refreshInitialize(QWidget* parent,
 		std::vector<std::wstring> pathsList,
 		std::wstring config,
 		std::wstring windowsConfig);
@@ -299,24 +307,24 @@ public:
 	//监视文件夹变动
 	void checkFilesChangeProc(std::wstring path);
 
+public:
 	//item添加删除
 	bool isItemTaskInQueue(ItemTask task);
-	void addItemTask(ItemTask task);
+	[[deprecated]] void addItemTask(ItemTask task);
+	void addItemTaskIfNotInQueue(ItemTask task);
 	void itemTaskExecuteProc();
 	//发送创建item信号，并且写入配置
 	void sendCreateItemSignalAndWriteConfig(std::wstring name, std::wstring path) {
-		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTask); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
-		std::cout << "Send CearteItem Signal\n";
-		//isCreatingItem[path] = true;
+		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTaskExecute); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
+		std::cout << "Send CreateItem Signal\n";
 		emit createItemSignal(name, path);
 		cvItemTaskFinished.wait(ulMtxItemTask);
 		writeConfig(configName);
 	}
 	//发送删除item信号，并且写入配置
 	void sendRemoveItemSignalAndWriteConfig(std::wstring name, std::wstring path) {
-		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTask); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
+		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTaskExecute); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
 		std::cout << "Send RemoveItem Signal\n";
-		//isRemovingItem[path] = true;
 		emit removeItemSignal(name, path);
 		cvItemTaskFinished.wait(ulMtxItemTask);
 		writeConfig(configName);
