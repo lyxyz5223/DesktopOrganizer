@@ -131,6 +131,7 @@ private:// 属性定义区
 	size_t itemsNumPerColumn = 0;
 	QSize itemSize;
 	DragArea* dragArea = nullptr;// 选中文件拖动区域
+
 	//std::vector<std::thread> checkFilesChangeThreads;
 	std::vector<FileChangesChecker*> fileChangesCheckerList;
 	bool checkFilesChangeThreadExit = false;

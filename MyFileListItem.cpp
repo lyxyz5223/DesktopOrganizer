@@ -6,6 +6,7 @@
 #include <qevent.h>
 #include <qdrag.h>
 #include <qmimedata.h>
+#include <qapplication.h>
 
 //C++
 #include <iostream>
@@ -301,6 +302,15 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 
 		if (isChecked())
 		{
+			Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
+			if (modifiers & Qt::ControlModifier)//是否按下Ctrl键
+			{
+				if (!isChecked())
+					setChecked(true);
+				else
+					setChecked(false);
+			}
+
 			//如果已经选中，则准备拖动事宜
 			if (dragArea)
 			{
@@ -326,7 +336,15 @@ void MyFileListItem::mousePressEvent(QMouseEvent* e)
 		else
 		{
 			//未选中则选中（单选）
-			if (selectionArea)
+			Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
+			if (modifiers & Qt::ControlModifier)//是否按下Ctrl键
+			{
+				if (!isChecked())
+					setChecked(true);
+				else
+					setChecked(false);
+			}
+			else if (selectionArea)
 			{
 				selectionArea->move(mapToParent(e->pos()));
 				selectionArea->reset();
@@ -372,6 +390,7 @@ void MyFileListItem::mouseMoveEvent(QMouseEvent* e)
 		//}
 		if (drag)
 		{
+			dragArea->show();
 			drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
 			drag->deleteLater();
 			drag = nullptr;
@@ -397,7 +416,12 @@ void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
 			drag->deleteLater();
 			drag = nullptr;
 			//并未拖动，所以多选变为单选
-			if (selectionArea)
+			Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
+			if (modifiers & Qt::ControlModifier)//是否按下Ctrl键
+			{
+
+			}
+			else if (selectionArea)
 			{
 				selectionArea->move(mapToParent(e->pos()));
 				selectionArea->reset();

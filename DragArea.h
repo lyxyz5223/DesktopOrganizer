@@ -16,6 +16,34 @@ class DragArea : public QWidget
 {
 	Q_OBJECT
 public:
+	struct ItemWithPosition {
+		void* item;
+		ItemProp originalItemProp;
+		QRect originalGeometry;
+	};
+
+private:
+
+	std::unordered_map<std::wstring, ItemWithPosition> children_map;
+	std::vector<std::wstring> children_keys;
+
+	std::vector<int> leftMost;
+	std::vector<int> rightMost;
+	std::vector<int> topMost;
+	std::vector<int> bottomMost;
+
+	size_t& itemsNumPerColumn;
+	QSize& itemSize;
+	Spacing& itemSpacing;
+	QWidget* parentWidget = nullptr;
+	QRect goalGeometry = QRect(0, 0, 0, 0);
+	void ChangeGoalGeometry();
+
+	QPoint cursorPosOffsetWhenMousePress;
+
+	//void checkCursorPosChange();
+
+public:
 	~DragArea() {}
 	DragArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing);
 	void removeItem(std::wstring name, std::wstring path);
@@ -64,11 +92,6 @@ public:
 	inline Spacing getItemSpacing() const {
 		return itemSpacing;
 	}
-	struct ItemWithPosition {
-		void* item;
-		ItemProp originalItemProp;
-		QRect originalGeometry;
-	};
 	inline std::unordered_map<std::wstring, ItemWithPosition> getSelectedItems() const {
 		return children_map;
 	}
@@ -81,7 +104,6 @@ public:
 	inline void setCursorPosOffsetWhenMousePress(QPoint CursorPosOffsetWhenMousePress) {
 		cursorPosOffsetWhenMousePress = CursorPosOffsetWhenMousePress;
 	}
-
 
 protected:
 	void paintEvent(QPaintEvent* e);
@@ -96,25 +118,5 @@ public slots:
 
 
 
-private:
-
-	std::unordered_map<std::wstring, ItemWithPosition> children_map;
-	std::vector<std::wstring> children_keys;
-
-	std::vector<int> leftMost;
-	std::vector<int> rightMost;
-	std::vector<int> topMost;
-	std::vector<int> bottomMost;
-
-	size_t& itemsNumPerColumn;
-	QSize& itemSize;
-	Spacing& itemSpacing;
-	QWidget* parentWidget = nullptr;
-	QRect goalGeometry = QRect(0, 0, 0, 0);
-	void ChangeGoalGeometry();
-
-	QPoint cursorPosOffsetWhenMousePress;
-
-	//void checkCursorPosChange();
 };
 

@@ -191,6 +191,11 @@ void DragArea::paintEvent(QPaintEvent* e)
 	pen.setWidth(2);
 	p.setPen(pen);
 	p.drawRect(rect());
+	//for (auto it = children_map.begin(); it != children_map.end(); it++)
+	//{
+	//	MyFileListItem* item = static_cast<MyFileListItem*>(it->second.item);
+	//	p.drawPixmap(item->geometry(), item->grab());
+	//}
 	QWidget::paintEvent(e);
 }
 

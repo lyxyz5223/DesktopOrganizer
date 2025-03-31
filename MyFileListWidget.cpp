@@ -1057,7 +1057,6 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 {
 	windowMoveResize.resizeDirection = windowMoveResize.None;
-
 	switch (e->button())
 	{
 	case Qt::MouseButton::LeftButton:
@@ -1529,7 +1528,6 @@ void MyFileListWidget::dragEnterEvent(QDragEnterEvent* e)
 				),
 			nullptr, this
 			);
-		dragArea->show();
 	}
 
 }
@@ -1538,7 +1536,6 @@ void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 {
 	if (dragArea)
 	{
-		dragArea->show();
 		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
 		//QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
 		QCursor cur;
@@ -1559,8 +1556,8 @@ void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 // 当QDrag离开当前窗口
 void MyFileListWidget::dragLeaveEvent(QDragLeaveEvent* e)
 {
-	if (dragArea)
-		dragArea->hide();
+	//if (dragArea)
+	//	dragArea->hide();
 
 }
 
@@ -2221,6 +2218,7 @@ void MyFileListWidget::itemTaskExecuteProc()
 				std::wstring newName = std::any_cast<std::wstring>(it.args[2]);
 				sendRenameItemSignalAndWriteConfig(name, path, newName);
 			}
+			break;
 			default:
 				break;
 			}
