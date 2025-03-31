@@ -9,6 +9,7 @@
 #include <set>
 #include <queue>
 #include <functional>
+#include <any>
 #include <mutex>
 #include "lib/SQLite/sqlite3.h"
 #include "FileChangesChecker.h"
@@ -135,19 +136,45 @@ private:// 属性定义区
 	bool checkFilesChangeThreadExit = false;
 	//typedef void (MyFileListWidget::* ItemTask) (std::wstring name, std::wstring path);
 	//任务队列，当有创建和删除item的信号时，都会添加任务到队列，随后将按照顺序依次执行队列任务
+
 	struct ItemTask {
-		void (MyFileListWidget::*task) (std::wstring name, std::wstring path) = nullptr;
-		std::wstring name;
-		std::wstring path;
+		class Any : public std::any {
+		public:
+			bool operator==(const Any& a) const {
+				//return type() == a.type() && std::any_cast<std::any>((std::any)*this) == std::any_cast<std::any>((std::any)a);
+				return (*this) == a;
+			}
+		};
+		enum Task {
+			Create,
+			Remove,
+			Rename
+		} task;
+		std::vector<std::any> args;
+
+		//std::wstring name;
+		//std::wstring path;
 		bool operator==(const ItemTask& itemTask) const {
 			if (this != nullptr)
-				return (task == itemTask.task && name == itemTask.name && path == itemTask.path);
-			return false;
+			{
+				if (task != itemTask.task || args.size() != itemTask.args.size())
+					return false;
+				for (auto i = 0; i < args.size(); i++)
+				{
+					if (args[i].type() != itemTask.args[i].type()
+						|| std::any_cast<std::wstring>(args[i]) != std::any_cast<std::wstring>(itemTask.args[i]))
+						return false;
+				}
+			}
+				//return (task == itemTask.task && args == itemTask.args);
+				//return (task == itemTask.task && name == itemTask.name && path == itemTask.path);
+			return true;
 		}
 		bool operator!=(const ItemTask& itemTask) const {
 			return !operator==(itemTask);
 		}
 	};
+
 	std::queue<ItemTask> itemTaskQueue;
 	std::mutex mtxItemTaskQueue; // 互斥锁
 	std::thread itemTaskThread;
@@ -305,7 +332,8 @@ public:
 	}
 
 	//监视文件夹变动
-	void checkFilesChangeProc(std::wstring path);
+	void checkFilesChange(std::wstring path, bool isSingleShot = true);
+	//void checkFilesChangeSingleShotProc(std::wstring path);
 
 public:
 	//item添加删除
@@ -329,6 +357,14 @@ public:
 		cvItemTaskFinished.wait(ulMtxItemTask);
 		writeConfig(configName);
 	}
+	//发送重命名item信号，并且写入配置
+	void sendRenameItemSignalAndWriteConfig(std::wstring oldName, std::wstring path, std::wstring newName) {
+		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTaskExecute); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
+		std::cout << "Send RenameItem Signal\n";
+		emit renameItemSignal(oldName, path, newName);
+		cvItemTaskFinished.wait(ulMtxItemTask);
+		writeConfig(configName);
+	}
 	//打开软件
 	static void openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd = SW_NORMAL, std::wstring workDirectory = L"", HWND msgOrErrWindow = NULL);
 	//从注册表中获取文件图标Icon和QIcon
@@ -344,10 +380,12 @@ public:
 signals:
 	void createItemSignal(std::wstring name, std::wstring path);
 	void removeItemSignal(std::wstring name, std::wstring path);
+	void renameItemSignal(std::wstring oldName, std::wstring path, std::wstring newName);
 	
 public slots:
 	void createItem(std::wstring name, std::wstring path);
 	void removeItem(std::wstring name, std::wstring path);
+	void renameItem(std::wstring oldName, std::wstring path, std::wstring newName);
 	void MenuClickedProc(QAction* action);
 	void refreshSelf();
 	void openCMD(std::wstring path);

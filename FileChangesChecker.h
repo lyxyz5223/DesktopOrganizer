@@ -37,7 +37,7 @@ private:
 	//过滤器，此处为监测文件名和目录名的变化
 	DWORD filter = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME;
 	//I/O完成端口
-	HANDLE iocp = 0;
+	HANDLE ioCompletionPort = 0;
 	//工作线程
 	std::thread workerThread;
 	//上一个修改内容
@@ -77,10 +77,10 @@ public:
 		callbackFunction = func;
 		callbackFunctionParameter = parameter;
 	}
-	//Callback函数
-	std::function<void(FileChangesChecker* checker, FileChanges fileChanges, void* parameter)> callbackFunction;
 protected:
 	//工作线程函数
 	void _WorkerThreadProc(HANDLE ioCompletionPort);
+	//Callback函数
+	std::function<void(FileChangesChecker* checker, FileChanges fileChanges, void* parameter)> callbackFunction;
 };
 

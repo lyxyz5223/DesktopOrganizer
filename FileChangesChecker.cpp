@@ -9,8 +9,8 @@ FileChangesChecker::FileChangesChecker(std::wstring path)
 void FileChangesChecker::start()
 {
 	// 创建 I/O 完成端口
-	iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-	if (iocp == NULL)
+	ioCompletionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+	if (ioCompletionPort == NULL)
 	{
 		std::cerr << "Failed to create I/O completion port." << std::endl;
 		MessageBox(0, L"Failed to create I/O completion port.\n检测文件更改失败，软件可能无法正常运行", L"错误", MB_ICONERROR);
@@ -29,12 +29,12 @@ void FileChangesChecker::start()
 	if (hDirectory == INVALID_HANDLE_VALUE)
 	{
 		std::cerr << "Failed to open directory." << std::endl;
-		CloseHandle(iocp);
+		CloseHandle(ioCompletionPort);
 		MessageBox(0, L"Failed to open directory.\n检测文件更改失败，软件可能无法正常运行", L"错误", MB_ICONERROR);
 		return;
 	}
 	// 将目录句柄关联到 I/O 完成端口
-	CreateIoCompletionPort(hDirectory, iocp, 0, 0);
+	CreateIoCompletionPort(hDirectory, ioCompletionPort, 0, 0);
 	// 初始化 I/O 上下文
 	OVERLAPPED_CONTEXT* context = new OVERLAPPED_CONTEXT();
 	latestContext = context;
@@ -59,25 +59,27 @@ void FileChangesChecker::start()
 	// 创建工作线程来处理 I/O 完成通知
 	if (!workerThread.joinable())
 	{
-		workerThread = std::thread(&FileChangesChecker::_WorkerThreadProc, this, iocp);
+		workerThread = std::thread(&FileChangesChecker::_WorkerThreadProc, this, ioCompletionPort);
 		workerThread.detach();
 	}
 }
 
 void FileChangesChecker::stop()
 {
-	PostQueuedCompletionStatus(iocp, 0, 0, NULL);
-	std::thread waitThread;//等待线程结束
-	waitThread.swap(workerThread);
-	if (waitThread.joinable())
-		waitThread.join();
-
+	if (ioCompletionPort)
+	{
+		PostQueuedCompletionStatus(ioCompletionPort, 0, 0, NULL);
+		std::thread waitThread;//等待线程结束
+		waitThread.swap(workerThread);
+		if (waitThread.joinable())
+			waitThread.join();
+		// 关闭 I/O 完成端口
+		CloseHandle(ioCompletionPort);
+		ioCompletionPort = 0;
+	}
 	// 关闭目录句柄
 	CloseHandle(hDirectory);
 	hDirectory = 0;
-	// 关闭 I/O 完成端口
-	CloseHandle(iocp);
-	iocp = 0;
 	// 释放 I/O 上下文
 	delete latestContext;
 	latestContext = 0;

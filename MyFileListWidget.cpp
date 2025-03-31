@@ -132,32 +132,43 @@ void MyFileListWidget::refreshInitialize(QWidget* parent, std::vector<std::wstri
 	//	checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
 	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
 	{
-		//checkFilesChangeThreads.push_back(std::thread(&MyFileListWidget::checkFilesChangeProc, this, *i));
+		//开局先检测一遍现有文件与配置文件之间的出入，并更新
+		std::thread(&MyFileListWidget::checkFilesChange, this, *i, true).detach();
+
+		//文件监测器，启动！
 		FileChangesChecker* fcc = new FileChangesChecker(*i);
 		fileChangesCheckerList.push_back(fcc);
 		std::wstring path = *i;
 		fcc->setCallback([this, path](FileChangesChecker* checker, FileChangesChecker::FileChanges fileChanges, void* parameter) {
 			ItemTask itemTask;
-			itemTask.name = fileChanges.newName;
-			itemTask.path = path + fileChanges.newName;
+			itemTask.args = { fileChanges.oldName, path };
 			switch (fileChanges.action)
 			{
-			case FileChangesChecker::Action::Added:
+			case FileChangesChecker::Action::Added://有新的文件
 			{
-				itemTask.task = &MyFileListWidget::sendCreateItemSignalAndWriteConfig;
+				itemTask.task = ItemTask::Create;
+				std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
 				addItemTaskIfNotInQueue(itemTask);
 				break;
 			}
-			case FileChangesChecker::Action::Removed:
+			case FileChangesChecker::Action::Removed://有文件被删除
 			{
-				itemTask.task = &MyFileListWidget::sendRemoveItemSignalAndWriteConfig;
+				itemTask.task = ItemTask::Remove;
+				std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
+				addItemTaskIfNotInQueue(itemTask);
+				break;
+			}
+			case FileChangesChecker::Action::RenamedNewName://有文件被重命名
+			{
+				itemTask.args.push_back(fileChanges.newName);
+				itemTask.task = ItemTask::Rename;
+				std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
 				addItemTaskIfNotInQueue(itemTask);
 				break;
 			}
 			default:
 				break;
 			}
-			//addItemTaskIfNotInQueue(*(std::wstring*)parameter);
 			}, &path);
 		fcc->start();
 	}
@@ -287,6 +298,7 @@ void MyFileListWidget::publicInitialize(QWidget* parent, std::wstring config, st
 	}
 	disconnect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
 	disconnect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem);
+	disconnect(this, &MyFileListWidget::renameItemSignal, this, &MyFileListWidget::renameItem);
 	if (connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem))
 	{
 #ifdef _DEBUG
@@ -297,6 +309,12 @@ void MyFileListWidget::publicInitialize(QWidget* parent, std::wstring config, st
 	{
 #ifdef _DEBUG
 		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem)\n";
+#endif // _DEBUG
+	}
+	if (connect(this, &MyFileListWidget::renameItemSignal, this, &MyFileListWidget::renameItem))
+	{
+#ifdef _DEBUG
+		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::renameItemSignal, this, &MyFileListWidget::renameItem)\n";
 #endif // _DEBUG
 	}
 
@@ -2018,7 +2036,7 @@ bool MyFileListWidget::writeConfig(std::wstring nameWithPath)
 	return true;
 }
 
-void MyFileListWidget::checkFilesChangeProc(std::wstring path)
+void MyFileListWidget::checkFilesChange(std::wstring path, bool isSingleShot)
 {
 	using namespace std;
 	WCHAR* cFilePath;
@@ -2074,7 +2092,8 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 					tmpItemsMap.erase(nameWithPath);
 					if (!itemsMap[nameWithPath].item)
 					{
-						ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
+						//ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
+						ItemTask task = { ItemTask::Create, {tmpwstringarray[0], path} };
 						if (!isItemTaskInQueue(task))
 							addItemTaskIfNotInQueue(task);
 					}
@@ -2083,7 +2102,7 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 				{
 					// Can't find the file in itemsMap
 					// Send CreateItem Signal
-					ItemTask task = { &MyFileListWidget::sendCreateItemSignalAndWriteConfig, tmpwstringarray[0], path };
+					ItemTask task = { ItemTask::Create, {tmpwstringarray[0], path} };
 					if (!isItemTaskInQueue(task))
 						addItemTaskIfNotInQueue(task);
 				}
@@ -2104,7 +2123,7 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 			{
 				if (itemsMap.count(i->first))
 				{
-					ItemTask task = { &MyFileListWidget::sendRemoveItemSignalAndWriteConfig, i->second.name, i->second.path };
+					ItemTask task = { ItemTask::Remove, {i->second.name, i->second.path} };
 					/*MessageBox((HWND)winId(), path.c_str(), i->second.name.c_str(), 0);*/
 					if (!isItemTaskInQueue(task))
 						addItemTaskIfNotInQueue(task);
@@ -2132,11 +2151,16 @@ void MyFileListWidget::checkFilesChangeProc(std::wstring path)
 					emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
 			}
 		}
+		if (isSingleShot)
+			break;
 	}
 }
 
+//请在调用的函数前添加互斥锁！
 bool MyFileListWidget::isItemTaskInQueue(ItemTask task)
 {
+	//请在调用的函数前添加互斥锁！
+	//std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
 	const std::queue<ItemTask>& queue = itemTaskQueue;
 	const std::deque<ItemTask>& deque = queue._Get_container();
 	if ((!deque.empty()) && std::find(deque.begin(), deque.end(), task) != deque.end())
@@ -2145,13 +2169,17 @@ bool MyFileListWidget::isItemTaskInQueue(ItemTask task)
 	}
 	return false;
 }
+
 void MyFileListWidget::addItemTask(ItemTask task)
 {
 	std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
 	itemTaskQueue.push(task);
 }
+
+//请在调用的函数前添加互斥锁！
 void MyFileListWidget::addItemTaskIfNotInQueue(ItemTask task)
 {
+	//请在调用的函数前添加互斥锁！
 	//std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
 	const std::queue<ItemTask>& queue = itemTaskQueue;
 	const std::deque<ItemTask>& deque = queue._Get_container();
@@ -2159,7 +2187,7 @@ void MyFileListWidget::addItemTaskIfNotInQueue(ItemTask task)
 	{
 		itemTaskQueue.push(task);
 #ifdef _DEBUG
-		std::cout << "Add item task:" << wstr2str_2ANSI(task.name) << std::endl;
+		std::cout << "Add item task:" << wstr2str_2ANSI(std::any_cast<std::wstring>(task.args[0])) << std::endl;
 #endif
 	}
 }
@@ -2172,11 +2200,32 @@ void MyFileListWidget::itemTaskExecuteProc()
 		{
 			ItemTask it = itemTaskQueue.front();
 #ifdef _DEBUG
-			std::cout << "Execute item task:" << wstr2str_2ANSI(it.name) << std::endl;
+			std::cout << "Execute item task:" << wstr2str_2ANSI(std::any_cast<std::wstring>(it.args[0])) << std::endl;
 #endif
-			(this->*(it.task))(it.name, it.path);
+			std::wstring name = std::any_cast<std::wstring>(it.args[0]);
+			std::wstring path = std::any_cast<std::wstring>(it.args[1]);
+			switch (it.task)
+			{
+			case ItemTask::Create:
+			{
+				sendCreateItemSignalAndWriteConfig(name, path);
+			}
+			break;
+			case ItemTask::Remove:
+			{
+				sendRemoveItemSignalAndWriteConfig(name, path);
+			}
+			break;
+			case ItemTask::Rename:
+			{
+				std::wstring newName = std::any_cast<std::wstring>(it.args[2]);
+				sendRenameItemSignalAndWriteConfig(name, path, newName);
+			}
+			default:
+				break;
+			}
 #ifdef _DEBUG
-			std::cout << "Finish executing item task:" << wstr2str_2ANSI(it.name) << std::endl;
+			std::cout << "Finish executing item task:" << wstr2str_2ANSI(std::any_cast<std::wstring>(it.args[0])) << std::endl;
 #endif
 			itemTaskQueue.pop();
 			mtxItemTaskQueue.unlock();
@@ -2448,6 +2497,23 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 			static_cast<MyFileListItem*>(item)->deleteLater();
 			item = nullptr;
 		}
+	}
+	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
+}
+
+void MyFileListWidget::renameItem(std::wstring oldName, std::wstring path, std::wstring newName)
+{
+	std::lock_guard<std::mutex> lock(mtxItemsMap);//互斥锁加锁
+	std::wstring oldNameWithPath = path + oldName;
+	std::wstring newNameWithPath = path + newName;
+	if (itemsMap.count(oldNameWithPath))
+	{
+		ItemProp ip = itemsMap[oldNameWithPath];
+		ip.name = newName;
+		void* item = ip.item;
+		itemsMap[newNameWithPath] = ip;
+		itemsMap.erase(oldNameWithPath);
+		static_cast<MyFileListItem*>(item)->setText(QString::fromStdWString(newName));
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
 }
