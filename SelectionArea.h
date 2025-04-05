@@ -1,48 +1,69 @@
-#pragma once
+#ifndef SELECTIONAREA_H
+#define SELECTIONAREA_H
 #include <qwidget.h>
-#include <thread>
+class SelectionArea : public QWidget{
+	Q_OBJECT
+private:
+	const QColor defaultBgColor = QColor(10, 123, 212, 100);
+	const QColor defaultBorderColor = QColor(10, 123, 212, 255);
+	const double defaultBorderWidth = 1.0;
 
-class SelectionArea :
-    public QWidget
-{
-    Q_OBJECT
+	QPoint mouseDownPos;
+	QRect _geometry;//frame center
+	const QColor backgroundColor = defaultBgColor;
+	const QColor borderColor = defaultBorderColor;
+	const double borderWidth = defaultBorderWidth;
 public:
-    ~SelectionArea() {}
-    SelectionArea(QWidget* parent = nullptr);
-    void resize(QSize size) {
-        QWidget::resize(size);
-        emit resized();
-    }
-    void resize(int x, int y) {
-        resize(QSize(x, y));
-    }
-    void reset() {
-        resize(0, 0);
-    }
-    void mouseMoveProc(QRect selectionRect) {
-        if (asyncMouseMoveProcConnection)
-            disconnect(asyncMouseMoveProcConnection);
-        asyncMouseMoveProcConnection = connect(this, &SelectionArea::asyncMouseMoveProcSignal, this, [=]() {
-            auto selectionArea = this;
-            selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
-                (selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
-            selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
-                selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
-            selectionArea->update();
-            });
-        std::thread th([&]() { emit asyncMouseMoveProcSignal(); });
-        th.detach();
-    }
+	~SelectionArea() {}
+	SelectionArea(QWidget* parent = nullptr);
+	QRect getGeometry() const {
+		return _geometry;
+	}
+	void setGeometry(QRect geometry) {
+		this->_geometry = geometry;
+		QWidget::setGeometry(geometry);
+		repaint();
+	}
+	void setGeometry(int x, int y, int width, int height) {
+		this->_geometry = QRect(x, y, width, height);
+		QWidget::setGeometry(x, y, width, height);
+		repaint();
+	}
+	QColor getBackgroundColor() const {
+		return backgroundColor;
+	}
+	QColor getBorderColor() const {
+		return borderColor;
+	}
+	double getBorderWidth() const {
+		return borderWidth;
+	}
+
+	QPoint getMouseDownPos() const {
+		return mouseDownPos;
+	}
+	void setMouseDownPos(QPoint pos) {
+		this->mouseDownPos = pos;
+	}
+
+	void reset() {
+		this->setGeometry(0, 0, 0, 0);
+	}
+	SelectionArea& operator=(const QRect& rect) {
+		this->setGeometry(rect);
+		return *this;
+	}
+	SelectionArea& operator=(const SelectionArea& area) {
+		this->setGeometry(area._geometry);
+		return *this;
+	}
 signals:
-    //void resized(QResizeEvent* e);
-    void resized();
-    void asyncMouseMoveProcSignal();
+	void resized(QRect newRect);
 
 protected:
-    void paintEvent(QPaintEvent* e);
-    void resizeEvent(QResizeEvent* e);
-
-private:
-    QMetaObject::Connection asyncMouseMoveProcConnection;
+	void paintEvent(QPaintEvent* e) override;
+	void resizeEvent(QResizeEvent* e) override;
 };
 
+
+#endif

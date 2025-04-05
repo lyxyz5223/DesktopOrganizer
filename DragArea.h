@@ -8,115 +8,86 @@
 #include <thread>
 #include <Windows.h>
 #include <iostream>
+#include <qlist.h>
+#include <qdatastream.h>
+#include <qiodevice.h>
 
 QPoint relativePosTransition(QWidget* from, QPoint fromPos, QWidget* to);
 QPoint relativePosTransition(QRect from, QPoint fromPos, QRect to);
+QPoint relativePosTransition(QPoint from, QPoint fromPos, QPoint to);
 
-class DragArea : public QWidget
+class DragArea
 {
-	Q_OBJECT
+	
 public:
 	struct ItemWithPosition {
-		void* item;
-		ItemProp originalItemProp;
-		QRect originalGeometry;
+		std::wstring name;
+		std::wstring path;
+		QImage itemImage;
+		QRect geometryInParent;
+		long long position;
 	};
 
-private:
+	static struct CustomData {
+		long long position;
+		QPoint offset;
+		friend QDataStream& operator<< (QDataStream& stream, const CustomData& data) {//序列化
+			stream << data.position;
+			stream << data.offset;
+			return stream;
+		}
+		friend QDataStream& operator>> (QDataStream& stream, CustomData& data) {//反序列化
+			stream >> data.position;
+			stream >> data.offset;
+			return stream;
+		}
+	};
 
-	std::unordered_map<std::wstring, ItemWithPosition> children_map;
+	static QByteArray serializeCustomDataList(const QList<CustomData>& data) {
+		QByteArray byteArray;
+		QDataStream stream(&byteArray, QIODevice::WriteOnly);
+		stream << data;
+		return byteArray;
+	}
+	static QList<CustomData> deserializeCustomDataList(const QByteArray& byteArray) {
+		QList<CustomData> data;
+		QDataStream stream(byteArray);
+		stream >> data;
+		return data;
+	}
+
+private:
+	std::unordered_map<std::wstring/*nameWithPath*/, ItemWithPosition> children_map;
 	std::vector<std::wstring> children_keys;
 
-	std::vector<int> leftMost;
-	std::vector<int> rightMost;
-	std::vector<int> topMost;
-	std::vector<int> bottomMost;
+	//std::vector<int> leftMost;
+	//std::vector<int> rightMost;
+	//std::vector<int> topMost;
+	//std::vector<int> bottomMost;
 
-	size_t& itemsNumPerColumn;
+	long long& itemsNumPerColumn;
 	QSize& itemSize;
 	Spacing& itemSpacing;
 	QWidget* parentWidget = nullptr;
-	QRect goalGeometry = QRect(0, 0, 0, 0);
-	void ChangeGoalGeometry();
-
-	QPoint cursorPosOffsetWhenMousePress;
-
-	//void checkCursorPosChange();
+	//QRect geometry = QRect(0, 0, 0, 0);
+	//void refreshGeometry();
 
 public:
 	~DragArea() {}
-	DragArea(QWidget* parent, size_t& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing);
+	DragArea(long long& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing);
 	void removeItem(std::wstring name, std::wstring path);
-	void addItem(ItemProp ip);
-	void show() {
-		//方法1
-		// QRect的right可能小于left，bottom可能小于top，这里排除这种可能
-		//QRect g;
-		//g.setSize(QSize(
-		//	(goalGeometry.width() > 0 ? goalGeometry.width() : -goalGeometry.width()),
-		//	(goalGeometry.height() > 0 ? goalGeometry.height() : -goalGeometry.height())
-		//));
-		//g.moveTo(QPoint(
-		//	(goalGeometry.left() < goalGeometry.right() ? goalGeometry.left() : goalGeometry.right()),
-		//	(goalGeometry.top() < goalGeometry.bottom() ? goalGeometry.top() : goalGeometry.bottom())
-		//	));
-		//move(g.topLeft());
-		//resize(g.size());
+	void addItem(ItemWithPosition iwp);
 
-		//方法2
-		//move(goalGeometry.topLeft());
-		//resize(goalGeometry.size());
-		QWidget::show();
-	}
-	[[deprecated]] void move(QPoint pos) {
-		QWidget::move(pos);
-	}
-	[[deprecated]] void move(int x, int y) {
-		// move(QPoint(x, y));
-	}
-	void moveRelative(QPoint pos, QWidget* from, QWidget* to) {
-		pos = relativePosTransition(from, pos, to); // 相对坐标-->绝对坐标
-		QWidget::move(pos);
-	}
-	void moveAbsolute(QPoint pos) {
-		QWidget::move(pos);
-	}
-	void correctPosition() {
-		moveRelative(goalGeometry.topLeft(), parentWidget, nullptr);
-	}
-
-	void hide() {
-		QWidget::hide();
-	}
-
-	inline Spacing getItemSpacing() const {
-		return itemSpacing;
-	}
-	inline std::unordered_map<std::wstring, ItemWithPosition> getSelectedItems() const {
+	inline std::unordered_map<std::wstring, ItemWithPosition> getSelectedItemsMap() const {
 		return children_map;
 	}
 	inline std::vector<std::wstring> getSelectedItemsKeys() const {
 		return children_keys;
 	}
-	inline QPoint getCursorPosOffsetWhenMousePress() const {
-		return cursorPosOffsetWhenMousePress;
-	}
-	inline void setCursorPosOffsetWhenMousePress(QPoint CursorPosOffsetWhenMousePress) {
-		cursorPosOffsetWhenMousePress = CursorPosOffsetWhenMousePress;
-	}
 
 protected:
-	void paintEvent(QPaintEvent* e);
 
-signals:
-	void hideSignal();
-
-public slots:
-	//void moveSlot(QPoint pos) {
-	//	move(pos);
-	//}
-
-
+private:
 
 };
 

@@ -2,7 +2,7 @@
 #include <qwidget.h>
 #include "MyFileListItem.h"
 #include "SelectionArea.h"
-#include "DragArea.h"
+//#include "DragArea.h"
 #include "MyMenu.h"
 #include <map>
 #include <unordered_map>
@@ -13,14 +13,21 @@
 #include <mutex>
 #include "lib/SQLite/sqlite3.h"
 #include "FileChangesChecker.h"
+#include "FunctionWrapper.h"
 
-class MyFileListWidget : public QWidget
+class MyAbstractFileListWidget : public QWidget{
+public:
+
+};
+
+class MyFileListWidget : public MyAbstractFileListWidget
 {
 	Q_OBJECT
 private:
 	//计数，当对象创建(调用构造函数)时，计数+1
 	//析构时，计数-1
 	static long long useCount;
+
 public:
 	static long long getCount() {
 		return useCount;
@@ -34,15 +41,35 @@ public:
 		std::wstring title = L"";
 		QRect rect = QRect();
 	};
-
 private:// 属性定义区
+	const QIcon iconRefresh = QIcon(":/DesktopOrganizer/img/iconoir--refresh.svg");
+	const QIcon iconCMD = QIcon(":/DesktopOrganizer/img/terminal.ico");
+	const QIcon iconPaste = QIcon(":/DesktopOrganizer/img/tabler--clipboard.svg");
+	const QIcon iconCopy = QIcon(":/DesktopOrganizer/img/tabler--copy.svg");
+	const QIcon iconCut = QIcon(":/DesktopOrganizer/img/tabler--cut.svg");
+	const QIcon iconMore = QIcon(":/DesktopOrganizer/img/tabler--dots-vertical.svg");
+	const QIcon iconPlus = QIcon(":/DesktopOrganizer/img/tabler--plus.svg");
+	const QIcon iconSquarePlus = QIcon(":/DesktopOrganizer/img/tabler--square-plus.svg");
+	const QIcon iconSquareRoundedPlus = QIcon(":/DesktopOrganizer/img/tabler--square-rounded-plus.svg");
+	const QIcon iconCirclePlus = QIcon(":/DesktopOrganizer/img/tabler--circle-plus.svg");
+	const QIcon& iconAdd = iconPlus;
+	const QIcon& iconSquareAdd = iconSquarePlus;
+	const QIcon& iconSquareRoundedAdd = iconSquareRoundedPlus;
+	const QIcon& iconCircleAdd = iconCirclePlus;
+	QIcon iconFolder;
+	QIcon iconLink;
+
 	MyFileListItem::ViewMode viewMode = MyFileListItem::ViewMode::Icon;
 
 	std::unordered_map<std::wstring/*name with path*/, ItemProp> itemsMap;// 文件列表
+	std::unordered_map<long long, std::wstring> positionNameWithPathMap;// position到name with path的映射表
 	std::mutex mtxItemsMap;// 读取/写入文件列表的互斥锁
 
 	std::vector<std::wstring> pathsList;// 文件路径列表
 	std::wstring indexesState = L"0";// 按列计算的索引状态，1表示已占用，0表示未占用
+
+	//多选item
+	Qt::KeyboardModifiers keyboardModifiers = Qt::KeyboardModifier::NoModifier;
 
 	//窗口id
 	long long windowId = 0;
@@ -104,31 +131,14 @@ private:// 属性定义区
 	} windowMoveResize;
 	double borderWidth = 3.0;
 
-	const QIcon iconRefresh = QIcon(":/DesktopOrganizer/img/iconoir--refresh.svg");
-	const QIcon iconCMD = QIcon(":/DesktopOrganizer/img/terminal.ico");
-	const QIcon iconPaste = QIcon(":/DesktopOrganizer/img/tabler--clipboard.svg");
-	const QIcon iconCopy = QIcon(":/DesktopOrganizer/img/tabler--copy.svg");
-	const QIcon iconCut = QIcon(":/DesktopOrganizer/img/tabler--cut.svg");
-	const QIcon iconMore = QIcon(":/DesktopOrganizer/img/tabler--dots-vertical.svg");
-	const QIcon iconPlus = QIcon(":/DesktopOrganizer/img/tabler--plus.svg");
-	const QIcon iconSquarePlus = QIcon(":/DesktopOrganizer/img/tabler--square-plus.svg");
-	const QIcon iconSquareRoundedPlus = QIcon(":/DesktopOrganizer/img/tabler--square-rounded-plus.svg");
-	const QIcon iconCirclePlus = QIcon(":/DesktopOrganizer/img/tabler--circle-plus.svg");
-	const QIcon& iconAdd = iconPlus;
-	const QIcon& iconSquareAdd = iconSquarePlus;
-	const QIcon& iconSquareRoundedAdd = iconSquareRoundedPlus;
-	const QIcon& iconCircleAdd = iconCirclePlus;
-	QIcon iconFolder;
-	QIcon iconLink;
 	//临时
 	const int zoomScreen = 10;//item的高度是屏幕高度/宽度中小的那个的1/zoomScreen倍
 	const int zoomScreenWidth = 20; ///item的宽度屏幕宽度1 / zoomScreen倍
 	void changeItemSizeAndNumbersPerColumn();
 	//std::unordered_map<std::wstring, bool> isRemovingItem;
 	//std::unordered_map<std::wstring, bool> isCreatingItem;
-	QRect selectionRect;// 框选区域
-	SelectionArea* selectionArea = nullptr;// 框选区域图形
-	size_t itemsNumPerColumn = 0;
+	SelectionArea* selectionArea = new SelectionArea(this);// 框选区域图形结构
+	long long itemsNumPerColumn = 0;
 	QSize itemSize;
 	DragArea* dragArea = nullptr;// 选中文件拖动区域
 
@@ -176,6 +186,14 @@ private:// 属性定义区
 		}
 	};
 
+	//struct ItemTask {
+	//	FunctionWrapper task;
+	//	bool operator==(const ItemTask& itemTask) const {
+	//		return task == itemTask.task;
+	//	}
+	//};
+
+	//item task任务相关
 	std::queue<ItemTask> itemTaskQueue;
 	std::mutex mtxItemTaskQueue; // 互斥锁
 	std::thread itemTaskThread;
@@ -342,6 +360,97 @@ public:
 	[[deprecated]] void addItemTask(ItemTask task);
 	void addItemTaskIfNotInQueue(ItemTask task);
 	void itemTaskExecuteProc();
+
+	struct Index {
+		long long x = 0,
+			y = 0;
+		bool isValid() const {
+			return x > 0 && y > 0;
+		}
+		QPoint toPos(QSize itemSize, Spacing itemSpacing) const {
+			return QPoint(
+				(x - 1) * (itemSize.width()) + x * itemSpacing.column,
+				(y - 1) * (itemSize.height()) + y * itemSpacing.line
+			);
+		}
+	};
+	struct Range {
+		Index start;
+		Index end;
+		Range(Index start, Index end) : start(start), end(end) {}
+	};
+	// 计算index索引
+	Index calculateIndex(long long position) const {
+		int xIndex = position / itemsNumPerColumn + 1;
+		int yIndex = position % itemsNumPerColumn + 1;
+		return {xIndex, yIndex};
+	}
+	QPoint calculatePosFromIndex(Index index) const {
+		return index.toPos(itemSize, itemSpacing);
+	}
+	long long calculatePositionNumberFromIndex(Index index) const {
+		return (index.x - 1) * itemsNumPerColumn + (index.y - 1);
+	}
+	long long calculatePositionNumberFromPos(QPoint pos) const {
+		Index index {
+			pos.x() / (itemSize.width() + itemSpacing.column),//计算得出当前item所在的位置
+			pos.y() / (itemSize.height() + itemSpacing.line)
+		};
+		index = calculateRelativeIndex(index, 1, 1);
+		auto position = calculatePositionNumberFromIndex(index);
+		return (position >= 0 ? position : 0);
+	}
+
+	//索引相对位置的计算
+	// 向右xOffset>0,向下yOffset>0
+	long long calculateRelativePosition(long long position,
+		int xOffset, int yOffset) const {
+		Index index = calculateIndex(position);
+		index = calculateRelativeIndex(index, xOffset, yOffset);
+		return calculatePositionNumberFromIndex(index);
+	}
+	Index calculateRelativeIndex(Index index, long long xOffset, long long yOffset) const {
+		index.x += xOffset;
+		index.y += yOffset;
+		index.x += index.y / itemsNumPerColumn;
+		index.y %= itemsNumPerColumn;
+		return index;
+	}
+	std::vector<Index> getItemsInRange(Range range) {
+		std::vector<Index> items;
+		for (long long x = range.start.x; x <= range.end.x; x++)
+		{
+			for (long long y = range.start.y; y <= range.end.y; y++)
+			{
+				long long position = calculatePositionNumberFromIndex({ x, y });
+				if (positionNameWithPathMap.count(position))
+				{
+					std::wstring nameWithPath = positionNameWithPathMap[position];
+					if (itemsMap.count(nameWithPath))
+						items.push_back({ x, y });
+				}
+			}
+		}
+		return items;
+	}
+	std::vector<Index> getSelectedItemsInRange(Range range) {
+		std::vector<Index> items;
+		for (long long x = range.start.x; x <= range.end.x; x++)
+		{
+			for (long long y = range.start.y; y <= range.end.y; y++)
+			{
+				long long position = calculatePositionNumberFromIndex({ x, y });
+				if (positionNameWithPathMap.count(position))
+				{
+					std::wstring nameWithPath = positionNameWithPathMap[position];
+					if (itemsMap.count(nameWithPath) && itemsMap[nameWithPath].item && static_cast<MyFileListItem*>(itemsMap[nameWithPath].item)->isChecked())
+						items.push_back({x, y});
+				}
+			}
+		}
+		return items;
+	}
+
 	//发送创建item信号，并且写入配置
 	void sendCreateItemSignalAndWriteConfig(std::wstring name, std::wstring path) {
 		std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTaskExecute); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
@@ -377,11 +486,13 @@ public:
 	static std::wstring LoadDllStringFromRegString(std::wstring regString);
 	//从注册表中加载菜单栏项目
 	void addActionsFromRegedit(QString path, MyMenu* menu);
+	void CreateDesktopPopupMenu();
 
 signals:
 	void createItemSignal(std::wstring name, std::wstring path);
 	void removeItemSignal(std::wstring name, std::wstring path);
 	void renameItemSignal(std::wstring oldName, std::wstring path, std::wstring newName);
+	void selectionAreaResized(QRect newGeometry);
 	
 public slots:
 	void createItem(std::wstring name, std::wstring path);

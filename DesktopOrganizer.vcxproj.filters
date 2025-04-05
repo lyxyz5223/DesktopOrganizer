@@ -73,6 +73,9 @@
     <ClCompile Include="FileChangesChecker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="FunctionWrapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="MyFileListWidget.h">
@@ -81,13 +84,10 @@
     <QtMoc Include="MyFileListItem.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="SelectionArea.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="DragArea.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="MyMenuAction.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="SelectionArea.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
@@ -108,6 +108,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="FileChangesChecker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FunctionWrapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DragArea.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

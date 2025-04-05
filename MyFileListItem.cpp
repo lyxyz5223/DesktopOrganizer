@@ -16,7 +16,7 @@
 #include <Windows.h>
 
 QString elidedMultiLinesText(QWidget* widget, QString text, int lines, Qt::TextElideMode ElideMode);
-void MyFileListItem::initialize(QWidget* parent, QSize defaultSize, bool isShadow)
+void MyFileListItem::initialize(QWidget* parent, QSize defaultSize)
 {
 	setAttribute(Qt::WA_TranslucentBackground, true);
 	setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnBottomHint);
@@ -34,63 +34,37 @@ void MyFileListItem::initialize(QWidget* parent, QSize defaultSize, bool isShado
 		Qtext = Qtext.left(Qtext.size() - 4);
 	QFontMetrics fontMetrics1(font());
 	int fontHeight = fontMetrics1.size(0, Qtext).height();
-	itemTextSize.setHeight(fontHeight);
 	connect(this, &MyFileListItem::doubleClicked, this, [=]() {
 #ifdef _DEBUG
-		std::cout << UTF8ToANSI(wstr2str_2UTF8(getPath()) + text().toStdString()).c_str() << std::endl;
+			std::cout << UTF8ToANSI(wstr2str_2UTF8(getPath()) + text().toStdString()).c_str() << std::endl;
 #endif // _DEBUG
-		ShellExecute(0, L"open", (getPath() + text().toStdWString()).c_str(), L"", 0, SW_NORMAL);
+			ShellExecute(0, L"open", (getPath() + text().toStdWString()).c_str(), L"", 0, SW_NORMAL);
 		});
-	connect(this, &MyFileListItem::removeSelfSignal, this, &MyFileListItem::removeSelfSlot);
-	connect(this, &MyFileListItem::moveSignal, this, [=](QPoint pos) { move(pos); });
+	connect(this, &MyFileListItem::moveSignal, this, [&](QPoint pos) { move(pos); });
+	connect(this, &MyFileListItem::resizeSignal, this, [&](QSize size) { resize(size); });
 	connect(this, &MyFileListItem::adjustSizeSignal, this, &MyFileListItem::adjustSize);
 }
-MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize) : QPushButton(parent)
+MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize)
+	: QPushButton(parent), itemRect(QPoint(0, 0), defaultSize)
 {
-	initialize(parent, defaultSize, false);//初始化
+	initialize(parent, defaultSize);//初始化
 }
 
-MyFileListItem::MyFileListItem(const MyFileListItem& item, bool isShadow) : QPushButton(item.parentWidget())
-{
-	if (!isShadow)
-		initialize(item.parentWidget(), item.size(), true);//初始化函数
-	else
-	{
-		setAttribute(Qt::WA_TransparentForMouseEvents, true);
-		setAttribute(Qt::WA_InputMethodTransparent, true);
-		setWindowFlags(windowFlags() | Qt::WindowTransparentForInput);
-	}
-
-	// 复制原有成员
-	viewMode = item.viewMode;
-	itemImage = item.itemImage;
-	itemTextSize = item.itemTextSize;
-	MyPath = item.MyPath;
-	//startPosOffset = item.startPosOffset;
-	if (isShadow)
-	{
-		bgBrush = item.bgBrush_Shadow;//background
-		isShadowItem = true;
-		setWindowOpacity(0.6);//无效
-	}
-	else
-		bgBrush = item.bgBrush;
-	setText(item.text());
-	resize(item.size());
-
-}
 void MyFileListItem::paintEvent(QPaintEvent* e)
 {
 	QPainter p(this);
 	QPen pen;
 	p.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);//抗锯齿
-	qreal xr, yr;
-	xr = yr = (size().width() > size().height() ? size().height() / 7 : size().width() / 7);
-	QRect qrect1;
-	qrect1 = this->rect();
+	qreal xr, yr;//圆角
+	xr = yr = (size().width() > size().height() ? size().height() / 8 : size().width() / 8);
+	QRect rect;
+	rect = this->rect();
+	QRect textRect;
 	//qrect1.setWidth(qrect1.width() - 1);
 	//qrect1.setHeight(qrect1.height() - 1);
 	p.setPen(Qt::NoPen);
+	p.fillRect(rect, QColor(0, 0, 0, 0));//全透明背景
+	this->itemRect = rect;
 	if (bgBrush != bgBrush_MouseMove)
 	{
 		if (isChecked())
@@ -98,70 +72,78 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 		else if (!isChecked())
 			bgBrush = bgBrush_Default;
 	}
-	if (isShadowItem)
-		bgBrush = bgBrush_Shadow;
+	
 	p.setBrush(bgBrush);
 	//p.setBrush(QBrush(QColor(100, 100, 119, 100)));
-	p.drawRoundedRect(qrect1, xr, yr, Qt::SizeMode::AbsoluteSize);
-	QString Qtext = text();
+	//p.drawRoundedRect(rect, xr, yr, Qt::SizeMode::AbsoluteSize);
+	QString Qtext = text();//文本
 	if (Qtext.right(4) == ".lnk" || Qtext.right(4) == ".url") // 这两种后缀名的文件直接省略后缀
 		Qtext = Qtext.left(Qtext.size() - 4);
-	QTextOption qto;
+	QTextOption qto;//文本绘制选项
 	switch (viewMode)
 	{
 	default:
 	case ViewMode::Icon:
 	{
-		qto.setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
-		pen.setColor(QColor(0, 0, 0, 100));
-		p.setPen(pen);
 		/*文字处理*/
-		Qtext = elidedMultiLinesText(this, Qtext, 1, Qt::ElideRight);
-		QFontMetrics fontMetrics1(font());
-		int textHeight = fontMetrics1.size(0, Qtext).height();//两行(如有，否则为一行)的总高度
-		itemTextSize.setHeight(textHeight);
-		qrect1 = rect();
+		Qtext = elidedMultiLinesText(this, Qtext, 2, Qt::ElideRight);//两行分割
+		QFontMetrics fontMetrics1(font());//字体
+		int textHeight = fontMetrics1.size(Qt::TextExpandTabs, Qtext).height();//两行(如有，否则为一行)的总高度
 		/*图标处理并绘制*/
-		QRect imageRect;
+		QRect imageRect;//图标具体位置
 		double zoom = iconZoom;//图标的缩放比例
-		QSize itemImageZoneSize = size();
-		itemImageZoneSize.setHeight(itemImageZoneSize.height() - textHeight);
+		QSize itemImageZoneSize = size();//图标绘制专属区域
+		itemImageZoneSize.setHeight(itemImageZoneSize.height() - fontMetrics1.lineSpacing() * 2);
 		if (itemImageZoneSize.width() <= itemImageZoneSize.height())
-		//宽小，用宽度计算
+		//宽小，用宽度计算图标大小/缩放
 			imageRect.setSize(QSize(itemImageZoneSize.width() * zoom, itemImageZoneSize.width() * zoom));
 		else
 		//高大，用高度计算
 			imageRect.setSize(QSize(itemImageZoneSize.height() * zoom, itemImageZoneSize.height() * zoom));
 		imageRect.moveTo(QPoint((itemImageZoneSize.width() - imageRect.width()) / 2, (itemImageZoneSize.height() - imageRect.height()) / 2));
 
-		//QRect imageRect((width() - width() * zoom) / 2,
-		//	(width() - width() * zoom) / 2,
-		//	width() * zoom,
-		//	width() * zoom);
-		//p.drawRect(imageRect);//正方形边框
-		//if (itemImage.width() >= itemImage.height())//宽大高小
-		//	imageRect.setSize(QSize(width() * zoom, width() * zoom * itemImage.height() / itemImage.width()));
-		//else//宽小高大
-		//	imageRect.setSize(QSize(width() * zoom * itemImage.width() / itemImage.height(), width() * zoom));
-		//imageRect.setRect((width() - imageRect.width()) / 2,
-		//	(width() + width() * zoom) / 2 - imageRect.height(),
-		//	imageRect.width(), imageRect.height());
-		
+
+		//文本处理
+		qto.setAlignment(Qt::AlignHCenter | Qt::AlignTop);//文本居中，居上
+		textRect.moveTo(0, itemImageZoneSize.height());
+		textRect.setSize(QSize(width(), textHeight));
+		int bgHeight = itemImageZoneSize.height() + textHeight;
+		if (bgHeight > height())
+			bgHeight = height();
+		//绘制有效区域背景
+		if (backgroundRect != QRect(0, 0, width(), bgHeight))
+		{
+			backgroundRect = QRect(0, 0, width(), bgHeight);
+			setMask(backgroundRect);
+		}
+		p.drawRoundedRect(backgroundRect, xr, yr, Qt::SizeMode::AbsoluteSize);
+		//绘制图标
+		pen.setColor(QColor(0, 0, 0, 100));//边框颜色
+		p.setPen(pen);//边框画笔
 		p.drawRect(imageRect);//正方形边框
-		p.drawImage(imageRect, itemImage);
+		p.drawImage(imageRect, itemImage);//绘制图标
+		this->imageRect = imageRect;//保存图标位置
 	}
 		break;
 	case ViewMode::List:
 	{
 		qto.setAlignment(Qt::AlignHCenter | Qt::AlignLeft);
-		qrect1.setX(itemImage.width());
-		qrect1.setWidth(size().width() - iconSize().width());
+		textRect.setX(itemImage.width());
+		textRect.setWidth(size().width() - iconSize().width());
+		p.drawRoundedRect(rect, xr, yr, Qt::SizeMode::AbsoluteSize);
+
 	}
 		break;
 	}
+	//绘制文本，设置颜色和画笔
 	pen.setColor(QColor(0, 0, 0, 255));
 	p.setPen(pen);
-	p.drawText(qrect1, Qtext,qto);
+	p.drawText(textRect, Qtext, qto);
+	this->elidedText = Qtext;//保存文本
+	this->textRect = textRect;//保存文本位置
+	this->textFont = font();
+	this->textPen = pen;
+	this->textOption = qto;
 	QWidget::paintEvent(e);
 	//QPushButton::paintEvent(e);
 }
@@ -169,29 +151,82 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 
 bool MyFileListItem::eventFilter(QObject* watched, QEvent* event)
 {
-
+	bool mousePosInItem = backgroundRect.contains(mapFromGlobal(QCursor::pos()));
+	//if (event->type() == QEvent::MouseMove && mousePosInItem)
+	//	bgBrush = bgBrush_MouseMove;
+	//else if (event->type() == QEvent::MouseMove && !mousePosInItem)
+	//	bgBrush = bgBrush_Default;
 	if (event->type() == QEvent::Enter)
 		bgBrush = bgBrush_MouseMove;
 	else if (event->type() == QEvent::Leave && !isChecked())
 		bgBrush = bgBrush_Default;
 	else if (event->type() == QEvent::Leave && isChecked())
 		bgBrush = bgBrush_Selected;
+	else if (event->type() == QEvent::MouseMove)
+	{
+		if (!mousePosInItem && bgBrush == bgBrush_MouseMove)
+		{
+			if (isChecked())
+				bgBrush = bgBrush_Selected;
+			else
+				bgBrush = bgBrush_Default;
+			update();
+		}
+		else if (mousePosInItem && bgBrush != bgBrush_MouseMove)
+		{
+			bgBrush = bgBrush_MouseMove;
+			update();
+		}
+	}
+	//if (event->type() == QEvent::MouseButtonPress)
+	//{
+	//	if (!mousePosInItem || shouldIgnore())
+	//	{
+	//		event->ignore();
+	//		bIgnore = true;
+	//	}
+	//}
+	//else if (event->type() == QEvent::MouseMove)
+	//{
+	//	if (shouldIgnore())
+	//		event->ignore();
+	//}
+	//else if (event->type() == QEvent::MouseButtonRelease)
+	//{
+	//	if (bIgnore)
+	//		event->ignore();
+	//	bIgnore = false;
+	//}
+	//else if (event->type() == QEvent::MouseButtonDblClick)
+	//{
+	//	if (!mousePosInItem)
+	//		event->ignore();
+	//}
+
 	return QPushButton::eventFilter(watched, event);
 }
-void MyFileListItem::onSelectionAreaResize()
+
+
+//bool isInRoundedRect(const QPointF& point, const QRectF& rect, qreal radius) {
+//	QPainterPath path;
+//	path.addRoundedRect(rect, radius, radius); // 创建圆角矩形路径
+//	return path.contains(point); // 直接判断点是否在路径内
+//}
+
+
+//矩形碰撞检测
+void MyFileListItem::judgeSelection(QRect selectionArea)
 {
+	if (selectionArea == QRect(0, 0, 0, 0))
+		setChecked(false);
 	bool checked = true;
-	//for (int i = 0; i < 2; i++)
-	if (selectionArea)
-	{
-		QRect thisRect = geometry();
-		QRect selectionAreaRect = selectionArea->geometry();
-		if (thisRect.right() < selectionAreaRect.left()
-			|| thisRect.left() > selectionAreaRect.right()
-			|| thisRect.top() > selectionAreaRect.bottom()
-			|| thisRect.bottom() < selectionAreaRect.top())
-			checked = false;
-	}
+	QRect thisRect = geometry();
+	thisRect.setSize(backgroundRect.size());
+	if (thisRect.right() < selectionArea.left()
+		|| thisRect.left() > selectionArea.right()
+		|| thisRect.top() > selectionArea.bottom()
+		|| thisRect.bottom() < selectionArea.top())
+		checked = false;
 	if (checked)
 		setChecked(true);
 	else
@@ -203,17 +238,16 @@ void MyFileListItem::adjustSize()
 	if (Qtext.right(4) == ".lnk" || Qtext.right(4) == ".url") // 这两种后缀名的文件直接省略后缀
 		Qtext = Qtext.left(Qtext.size() - 4);
 	QFontMetrics fontMetrics1(font());
-	Qtext = elidedMultiLinesText(this, Qtext, 1, Qt::ElideRight);
-	int fontHeight = fontMetrics1.size(Qt::TextExpandTabs, Qtext).height();
-	itemTextSize.setHeight(fontHeight);
+	Qtext = elidedMultiLinesText(this, Qtext, 2, Qt::ElideRight);
+	int textHeight = fontMetrics1.size(Qt::TextExpandTabs, Qtext).height();
 	switch (viewMode)
 	{
 	default:
 	case ViewMode::Icon:
-		resize(itemImage.width() + 2 * fontMetrics1.averageCharWidth(), itemImage.height() + fontHeight);
+		resize(itemImage.width() + 2 * fontMetrics1.averageCharWidth(), itemImage.height() + textHeight);
 		break;
 	case ViewMode::List:
-		resize(parentWidget()->width(), 2 * fontHeight);
+		resize(parentWidget()->width(), 2 * textHeight);
 		break;
 	}
 }
@@ -265,175 +299,18 @@ QString elidedMultiLinesText(QWidget* widget,QString text, int lines, Qt::TextEl
 
 void MyFileListItem::mousePressEvent(QMouseEvent* e)
 {
-	switch (e->button())
-	{
-	case Qt::MouseButton::RightButton:
-	{
-		QMenu* menu1 = new QMenu(this);
-		menu1->addAction(QIcon(), "打开");
-		menu1->addSeparator();
-		menu1->addAction(QIcon(), "打开方式");
-		menu1->addAction(QIcon(), "刷新");
-		menu1->addAction(QIcon(), "删除");
-		connect(menu1, SIGNAL(triggered(QAction*)), this, SLOT(MenuClickedProc(QAction*)));
-		menu1->exec(QCursor::pos());
-		disconnect(menu1, SIGNAL(triggered(QAction*)), this, SLOT(MenuClickedProc(QAction*)));
-
-		break;
-	}
-	case Qt::MouseButton::LeftButton:
-	{
-		//bgBrush = bgBrush_Selected;
-		//setChecked(true);
-		//update();
-
-		//QPoint p = mapToParent(e->pos());
-		//selectionArea->move(p);
-		//selectionArea->reset();
-		QCursor cursor;
-		QPoint startPos = cursor.pos();
-
-		drag = new QDrag(this);
-		drag->setHotSpot(e->pos());
-		QImage dragImage(1, 1, QImage::Format_ARGB32);
-		dragImage.fill(QColor(255, 255, 255, 0));
-		drag->setPixmap(QPixmap::fromImage(dragImage));
-
-
-		if (isChecked())
-		{
-			Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
-			if (modifiers & Qt::ControlModifier)//是否按下Ctrl键
-			{
-				if (!isChecked())
-					setChecked(true);
-				else
-					setChecked(false);
-			}
-
-			//如果已经选中，则准备拖动事宜
-			if (dragArea)
-			{
-				dragArea->correctPosition();
-				QPoint leftTop = relativePosTransition(nullptr, dragArea->pos(), parentWidget());
-				startPosOffset.setX(startPos.x() - leftTop.x());
-				startPosOffset.setY(startPos.y() - leftTop.y());
-				dragArea->setCursorPosOffsetWhenMousePress(startPosOffset);
-
-				//	dragArea->show();
-				QList<QUrl> urls;
-				const auto sels = dragArea->getSelectedItemsKeys();
-				for (auto iter = sels.begin(); iter != sels.end(); iter++)
-				{
-					QUrl url = QUrl::fromLocalFile(QString::fromStdWString(*iter));
-					urls.push_back(url);
-				}
-				QMimeData* mimeData = new QMimeData();
-				mimeData->setUrls(urls);
-				drag->setMimeData(mimeData);
-			}
-		}
-		else
-		{
-			//未选中则选中（单选）
-			Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
-			if (modifiers & Qt::ControlModifier)//是否按下Ctrl键
-			{
-				if (!isChecked())
-					setChecked(true);
-				else
-					setChecked(false);
-			}
-			else if (selectionArea)
-			{
-				selectionArea->move(mapToParent(e->pos()));
-				selectionArea->reset();
-			}
-			if (dragArea)
-			{
-				startPosOffset.setX(startPos.x() - pos().x() + dragArea->getItemSpacing().column);
-				startPosOffset.setY(startPos.y() - pos().y() + dragArea->getItemSpacing().line);
-				dragArea->moveRelative(
-					QPoint(
-						pos().x() - dragArea->getItemSpacing().column,
-						pos().y() - dragArea->getItemSpacing().line
-					),
-					parentWidget(), nullptr
-					);
-				dragArea->setCursorPosOffsetWhenMousePress(startPosOffset);
-
-				QList<QUrl> urls;
-				QUrl url = QUrl::fromLocalFile(QString::fromStdWString(this->MyPath) + this->text());
-				urls.push_back(url);
-				QMimeData* mimeData = new QMimeData();
-				mimeData->setUrls(urls);
-				drag->setMimeData(mimeData);
-			}
-		}
-		//drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
-	}
-		break;
-	default:
-		break;
-	}
 }
 void MyFileListItem::mouseMoveEvent(QMouseEvent* e)
 {
-	if (e->buttons() & Qt::MouseButton::LeftButton)// 左键拖动
-	{
-		//if (shadowItem)
-		//{
-		//	shadowItem->show();
-		//	QPoint pos(e->globalPosition().x(), e->globalPosition().y());
-		//	//std::cout << pos.x() << "," << pos.y() << std::endl;
-		//	shadowItem->move(pos.x() - startPosOffset.x(), pos.y() - startPosOffset.y());
-		//}
-		if (drag)
-		{
-			dragArea->show();
-			drag->exec(Qt::DropAction::CopyAction | Qt::DropAction::MoveAction | Qt::DropAction::LinkAction | Qt::DropAction::TargetMoveAction | Qt::DropAction::IgnoreAction);
-			drag->deleteLater();
-			drag = nullptr;
-		}
-	}
-}
-void MyFileListItem::dragMoveEvent(QDragMoveEvent* e)
-{
-
-}
-void MyFileListItem::dragEnterEvent(QDragEnterEvent* event)
-{
-
 }
 void MyFileListItem::mouseReleaseEvent(QMouseEvent* e)
 {
-	switch (e->button())
-	{
-	case Qt::MouseButton::LeftButton:
-	{
-		if (drag)
-		{
-			drag->deleteLater();
-			drag = nullptr;
-			//并未拖动，所以多选变为单选
-			Qt::KeyboardModifiers modifiers = QApplication::keyboardModifiers();
-			if (modifiers & Qt::ControlModifier)//是否按下Ctrl键
-			{
-
-			}
-			else if (selectionArea)
-			{
-				selectionArea->move(mapToParent(e->pos()));
-				selectionArea->reset();
-			}
-		}
-		if(dragArea)
-			dragArea->hide();
-	}
-		break;
-	default:
-		break;
-	}
+}
+void MyFileListItem::dragMoveEvent(QDragMoveEvent* e)
+{
+}
+void MyFileListItem::dragEnterEvent(QDragEnterEvent* e)
+{
 }
 
 void MyFileListItem::MenuClickedProc(QAction* action)
@@ -441,10 +318,10 @@ void MyFileListItem::MenuClickedProc(QAction* action)
 	if (action->text() == "打开")       
 		emit doubleClicked();
 	else if (action->text() == "删除")
-		emit removeSelfSignal();
+		removeSelf();
 }
 
-void MyFileListItem::removeSelfSlot()
+void MyFileListItem::removeSelf()
 {
 	//MessageBox(0, (getPath() + text().toStdWString()).c_str(), 0, 0);
 	std::wstring nameWithPath = getPath() + text().toStdWString();

@@ -102,6 +102,7 @@
     <ClCompile Include="FileChangesChecker.cpp" />
     <ClCompile Include="fileProc.cpp" />
     <ClCompile Include="DragArea.cpp" />
+    <ClCompile Include="FunctionWrapper.cpp" />
     <ClCompile Include="MyFileListItem.cpp" />
     <ClCompile Include="MyFileListWidget.cpp" />
     <ClCompile Include="MyMenu.cpp">
@@ -124,7 +125,8 @@
   <ItemGroup>
     <ClInclude Include="FileChangesChecker.h" />
     <ClInclude Include="fileProc.h" />
-    <QtMoc Include="DragArea.h" />
+    <ClInclude Include="DragArea.h" />
+    <ClInclude Include="FunctionWrapper.h" />
     <ClInclude Include="ItemProperty.h" />
     <ClInclude Include="lib\otlv4.h" />
     <QtMoc Include="MyFileListWidget.h" />

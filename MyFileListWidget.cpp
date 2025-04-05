@@ -114,9 +114,6 @@ void MyFileListWidget::refreshInitialize(QWidget* parent, std::vector<std::wstri
 
 	configName = config;
 	this->windowsConfigName = windowsConfig;
-	selectionArea = new SelectionArea(this);
-	dragArea = new DragArea(this, itemsNumPerColumn, itemSize, itemSpacing);
-	dragArea->hide();
 	/*计算item大小和每列item的个数*/
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
@@ -325,30 +322,28 @@ void MyFileListWidget::publicInitialize(QWidget* parent, std::wstring config, st
 		[&]() {
 			while (true)
 			{
+				Sleep(100);
 				//size_t npcBackup = itemsNumPerColumn;
 				/*重新计算item大小和每列item的个数*/
 				changeItemSizeAndNumbersPerColumn();
-				// 变小
+				std::lock_guard<std::mutex> lock(mtxItemsMap);
 				for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
 				{
-					int xIndex = i->second.position / itemsNumPerColumn + 1;
-					int yIndex = i->second.position % itemsNumPerColumn + 1;
-					QPoint itemPos = QPoint(
-						(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column,
-						(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line
-					);
+					Index index = calculateIndex(i->second.position);
+					QPoint itemPos = calculatePosFromIndex(index);
 					if (i->second.item)
 					{
 						if (static_cast<MyFileListItem*>(i->second.item)->size() != itemSize)
-							emit static_cast<MyFileListItem*>(i->second.item)->adjustSizeSignal();
+							emit static_cast<MyFileListItem*>(i->second.item)->resizeSignal(itemSize);
 						if (itemPos != ((MyFileListItem*)i->second.item)->pos())
 							emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
 					}
 				}
-				Sleep(100);
 			}
 		});
 	sizeCalculateThread.detach();
+	dragArea = new DragArea(itemsNumPerColumn, itemSize, itemSpacing);
+
 }
 //主窗口与子窗口（映射）
 MyFileListWidget::MyFileListWidget(
@@ -398,26 +393,18 @@ void MyFileListWidget::refreshSelf()
 		delete (*iter);
 	}
 	fileChangesCheckerList.clear();
-	if (dragArea)
-	{
-		dragArea->deleteLater();
-		dragArea = nullptr;
-	}
-	if (selectionArea)
-	{
-		selectionArea->reset();
-		selectionArea->deleteLater();
-		selectionArea = nullptr;
-	}
+
+	mtxItemsMap.lock();
 	for (auto iter = itemsMap.begin(); iter != itemsMap.end(); iter++)
 		if (iter->second.item)
 			static_cast<MyFileListItem*>(iter->second.item)->QPushButton::deleteLater();
+	itemsMap.clear();
+	positionNameWithPathMap.clear();
+	mtxItemsMap.unlock();
 	itemSize = QSize();
 	itemsNumPerColumn = 0;
-	selectionRect = QRect();
 
 	indexesState = L"0";
-	itemsMap.clear();
 	refreshInitialize(parent, pathsList, configName, windowsConfigName);
 }
 
@@ -466,6 +453,7 @@ void MyFileListWidget::openProgram(std::wstring exeFilePath, std::wstring parame
 #endif // 
 	}
 }
+
 HICON MyFileListWidget::ExtractIconFromRegString(std::wstring regString, HINSTANCE hInst)
 {
 	using std::wstring;
@@ -508,6 +496,7 @@ HICON MyFileListWidget::ExtractIconFromRegString(std::wstring regString, HINSTAN
 	catch(std::exception e) {
 		std::cerr << e.what() << std::endl;
 	}
+
 	HICON res = ExtractIcon(hInst, filePath.c_str(), index);
 #ifdef _DEBUG
 	if (!res)
@@ -871,6 +860,198 @@ void MyFileListWidget::MenuClickedProc(QAction* action)
 	//if (action->text() == "刷新");
 }
 
+void MyFileListWidget::CreateDesktopPopupMenu()
+{
+	QPoint curPos = QCursor::pos();
+	//创建菜单
+	MyMenu* menu1 = new MyMenu(this);
+	MyMenuAction* actionRefresh = new MyMenuAction(iconRefresh, "刷新\tE");
+	connect(actionRefresh, &MyMenuAction::triggered, this, &MyFileListWidget::refreshSelf);
+	MyMenuAction* pasteAction = new MyMenuAction(iconPaste, "粘贴\tP");
+	connect(pasteAction, &MyMenuAction::triggered, this, &MyFileListWidget::pasteProc);
+	MyMenuAction* newFileOrFolderAction = new MyMenuAction(iconCirclePlus, "新建\tW");
+
+
+	//------------------------------------------------------
+	//二级菜单：Desktop Organizer
+	MyMenuAction* desktopOrganizerAction = new MyMenuAction(QIcon(), "Desktop Organizer");
+	MyMenu* desktopOrganizerMenu = new MyMenu(menu1);
+	desktopOrganizerMenu->addAction(
+		"Create new window",
+		this,
+		[&]() {
+			signed long long wid = 0;
+			{
+				std::lock_guard<std::mutex> lock(mtxWindowIdList);
+				while ((wid++) >= 0)//wid为负数时表示id已经被占用完
+				{
+					if (std::find(windowIdList.begin(), windowIdList.end(), wid) == windowIdList.end())
+						break;
+				}
+				if (wid < 0)
+				{
+					QMessageBox::critical(this, "Error", "No available window id!");
+					return;
+				}
+			}
+			createChildWindow(this,
+				"DesktopOrganizer SubWindow",
+				L"",
+				windowsConfigName,
+				wid,
+				true,
+				QRect(mapFromGlobal(curPos), size() / 3),
+				true);
+		}
+	);
+	desktopOrganizerAction->setMenu(desktopOrganizerMenu);
+	//二级菜单：Widget控制
+	bool bClose = false;
+	MyMenuAction* myFileListWidgetAction = new MyMenuAction(QIcon(), "Widget Control");
+	MyMenu* widgetControlMenu = new MyMenu(menu1);
+	widgetControlMenu->addAction("关闭Widget", this, [&] { /*MyFileListWidget::*/bClose = true; });
+	widgetControlMenu->addAction("退出软件", this, []() {exit(0); });
+	widgetControlMenu->addAction("(主窗口已嵌入桌面)")->setEnabled(false);
+	widgetControlMenu->addAction("脱离主窗口", this, [&]() {
+		SetParent((HWND)this->winId(), 0);
+		});
+	widgetControlMenu->addAction("嵌入主窗口", this, [&]() {
+		SetParent((HWND)this->winId(), (HWND)parent->winId());
+		});
+	widgetControlMenu->addAction("取消无边框窗口属性", this, [&]() {
+		QRect rect(geometry());
+		this->setWindowFlags(this->windowFlags() & (~Qt::FramelessWindowHint));
+		move(rect.topLeft());
+		resize(rect.size());
+		show();
+		});
+	widgetControlMenu->addAction("添加无边框窗口属性", this, [&]() {
+		QRect rect(geometry());
+		this->setWindowFlags(this->windowFlags() | (Qt::FramelessWindowHint));
+		move(rect.topLeft());
+		resize(rect.size());
+		show();
+		});
+	myFileListWidgetAction->setMenu(widgetControlMenu);
+
+
+	//二级菜单：新建
+	MyMenu* newOptions = new MyMenu(menu1);
+	newOptions->addAction(iconFolder, "文件夹");
+	newOptions->addAction(iconLink, "快捷方式");
+	newFileOrFolderAction->setMenu(newOptions);
+	newOptions->addSeparator();
+	//newOptions->addAction("txt文本文档");
+	//获取右键新建文件子菜单列表项
+	QSettings shellNewContents(HKEY_CURRENT_USER_ShellNew_STR, QSettings::NativeFormat);
+	QVariant extensionsValue = shellNewContents.value("Classes");
+	if (extensionsValue.typeId() == QMetaType::QStringList)
+	{
+		QStringList extensionList = extensionsValue.toStringList();
+		extensionList.insert(0, ".txt");
+		std::cout << UTF8ToANSI("新建一栏扩展名：");
+		for (qsizetype i = 0; i < extensionList.size(); i++)
+		{
+			std::cout << extensionList[i].toStdString() << " ";
+
+			std::wstring extension = extensionList[i].toStdWString();
+			if (extension == L".library-ms" || extension == L".lnk"/* || extension == L"Folder"*/)
+				continue;//排除指定文件类型
+			if (extension.length() > 0)
+			{
+				SHFILEINFO info;
+				if (SHGetFileInfo(extension.c_str(), FILE_ATTRIBUTE_NORMAL, &info, sizeof(info), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES | SHGFI_ICON))
+				{
+					std::wstring type = info.szTypeName;
+					QIcon icon = QPixmap::fromImage(QImage::fromHICON(info.hIcon));
+
+					newOptions->addAction(icon, QString::fromStdWString(type),
+						QKeySequence(),//加速键
+						this, [=]() {
+							if (pathsList.size() == 1)
+							{
+								newFileProc(extension, pathsList.front());
+							}
+							else if (pathsList.size() > 1)
+							{
+								MyMenu* newFilePathSelectionMenu = new MyMenu(this);
+								for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
+								{
+									newFilePathSelectionMenu->addAction(QIcon(), QString::fromStdWString(*iter),
+										QKeySequence(),
+										this, [=]() {
+											newFileProc(extension, *iter);
+										});
+								}
+
+								newFilePathSelectionMenu->exec(QCursor::pos());
+								newFilePathSelectionMenu->deleteLater();
+							}
+
+						});
+				}
+			}
+
+			// 注册表法通过文件后缀获取文件类型描述
+			//QSettings filePathAtRegister(QString(HKEY_CLASSES_ROOT_STR) + "\\" + vl[i], QSettings::NativeFormat);
+			//QVariant fn = filePathAtRegister.value(".", true);
+			//if (fn.typeId() == QMetaType::Bool && fn.toBool())
+			//	continue;
+			//QSettings fileDescription(QString(HKEY_CLASSES_ROOT_STR) + "\\" + fn.toString(), QSettings::NativeFormat);
+			//fn = fileDescription.value(".", true);
+			//if (fn.typeId() == QMetaType::Bool && fn.toBool())
+			//	continue;
+			//QString fileDescriptionText = fn.toString();
+			//newOptions->addAction(fileDescriptionText);
+		}
+		std::cout << std::endl;
+	}
+
+
+	MyMenuAction* displayFullActions = new MyMenuAction("显示全部选项");
+	connect(displayFullActions, &MyMenuAction::triggered, this, [=]() {
+		showDesktopOldPopupMenu(curPos);
+		});
+
+	// 菜单添加列表项
+	menu1->addAction(actionRefresh);
+	menu1->addSeparator();
+	//menu1->addAction(iconCMD, "打开cmd\n    - 程序运行的工作路径\tO", this, [=]() { MyFileListWidget::openCMD(L""); });
+	//for (std::wstring path : pathsList)
+	//{
+	//	MyMenuAction* openCMDAction = new MyMenuAction();
+	//	openCMDAction->setText(QString("打开cmd\n    - ") + QString::fromStdWString(path));
+	//	openCMDAction->setIcon(iconCMD);
+	//	connect(openCMDAction, &MyMenuAction::triggered, this, [=]() { MyFileListWidget::openCMD(path); });
+	//	menu1->addAction(openCMDAction);
+	//}
+	MyMenuAction* cmdAction = new MyMenuAction(iconCMD, "打开cmd");
+	MyMenu* cmdListMenu = new MyMenu(menu1);
+	cmdListMenu->addAction("程序运行的工作路径", this, [=]() { MyFileListWidget::openCMD(L""); });
+	for (std::wstring path : pathsList)
+		cmdListMenu->addAction(QString::fromStdWString(path), this, [=]() { MyFileListWidget::openCMD(path); });
+	cmdAction->setMenu(cmdListMenu);
+	menu1->addAction(cmdAction);
+
+	menu1->addSeparator();
+	menu1->addAction(pasteAction);
+	menu1->addSeparator();
+	menu1->addAction(desktopOrganizerAction);
+	menu1->addAction(myFileListWidgetAction);
+	menu1->addSeparator();
+	menu1->addAction(newFileOrFolderAction);
+	menu1->addSeparator();
+	menu1->addAction(displayFullActions);// 添加二级菜单
+
+	connect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
+	menu1->setCursorPos(curPos);
+	menu1->exec(curPos);
+	disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
+	menu1->deleteLater();
+	if (bClose)
+		close();
+}
+
 
 void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 {
@@ -909,33 +1090,6 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 	{
 		//鼠标左键拖动
 		{
-			//RECT newRect = windowMoveResize.originGeo;
-			//POINT mousePos = { 0 };
-			//GetCursorPos(&mousePos);
-			//POINT mouseOffset = { 0 };
-			//mouseOffset.x = mousePos.x - windowMoveResize.mouseDownPos.x;
-			//mouseOffset.y = mousePos.y - windowMoveResize.mouseDownPos.y;
-			//int left = windowMoveResize.originGeo.left + mouseOffset.x;
-			//int top = windowMoveResize.originGeo.top + mouseOffset.y;
-			//int right = windowMoveResize.originGeo.right + mouseOffset.x;
-			//int bottom = windowMoveResize.originGeo.bottom + mouseOffset.y;
-			//if (windowMoveResize.resizeDirection & windowMoveResize.Left)
-			//	newRect.left = ((left < windowMoveResize.originGeo.right - 2 * borderWidth) ? left : (windowMoveResize.originGeo.right - 2 * borderWidth));
-			//if (windowMoveResize.resizeDirection & windowMoveResize.Top)
-			//	newRect.top = ((top < windowMoveResize.originGeo.bottom - 2 * borderWidth) ? top : (windowMoveResize.originGeo.bottom - 2 * borderWidth));
-			//if (windowMoveResize.resizeDirection & windowMoveResize.Right)
-			//	newRect.right = ((right > windowMoveResize.originGeo.left + 2 * borderWidth) ? right : (windowMoveResize.originGeo.left + 2 * borderWidth));
-			//if (windowMoveResize.resizeDirection & windowMoveResize.Bottom)
-			//	newRect.bottom = ((bottom > windowMoveResize.originGeo.top +  2 * borderWidth) ? bottom : (windowMoveResize.originGeo.top + 2 * borderWidth));
-			//MoveWindow(
-			//	(HWND)this->winId(),
-			//	newRect.left, newRect.top, 
-			//	newRect.right - newRect.left,
-			//	newRect.bottom - newRect.top,
-			//	TRUE
-			//);
-			
-			
 			QRect geo = QRect(
 				windowMoveResize.originGeo.topLeft(),
 				windowMoveResize.originGeo.size()
@@ -958,27 +1112,41 @@ void MyFileListWidget::mouseMoveEvent(QMouseEvent* e)
 				geo.setHeight((hei > 2 * borderWidth) ? hei : (2 * borderWidth));
 			//窗口移动
 			if (windowMoveResize.move)
+			{
 				geo.moveTo(geo.topLeft() + mouseOffset);
-			qDebug() << "MouseMove:" << geo;
-			setGeometry(geo);
+				qDebug() << "WindowMove: " << geo;
+			}
+			if (windowMoveResize.resizeDirection != windowMoveResize.None)
+				setGeometry(geo);
 		}
 
-
-
-		if (windowMoveResize.resizeDirection == windowMoveResize.None && !titleBarFrameGeometry.contains(e->pos()))
-			if (selectionArea)
-			{
-				QPoint p = e->pos();// mapToParent(e->pos());
-				selectionRect.setBottomRight(p);
-				selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
-					(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
-				selectionArea->resize(selectionRect.width() >= 0 ? selectionRect.width() : -selectionRect.width(),
-					selectionRect.height() >= 0 ? selectionRect.height() : -selectionRect.height());
-				selectionArea->update();
-				//selectionArea->mouseMoveProc(selectionRect);
-				//std::cout << selectionRect.x() << "," << selectionRect.y()
-				//	<< "," << selectionRect.width() << "," << selectionRect.height() << std::endl;
-			}
+	}
+	//鼠标拖动事件，框选item
+	if (e->buttons() & (Qt::LeftButton | Qt::RightButton))
+	if (windowMoveResize.resizeDirection == windowMoveResize.None && !titleBarFrameGeometry.contains(e->pos()))
+	{
+		//TODO: 拖动框选item
+		QPoint mdPos = selectionArea->getMouseDownPos();
+		QPoint mPos = QCursor::pos();
+		QRect selectionAreaGeometry;
+		QPoint topLeft(mdPos.x(), mdPos.y());
+		int width = mPos.x() - mdPos.x();
+		int height = mPos.y() - mdPos.y();
+		if (width < 0)
+		{
+			width = -width;
+			topLeft.setX(mPos.x());
+		}
+		if (height < 0)
+		{
+			height = -height;
+			topLeft.setY(mPos.y());
+		}
+		topLeft = mapFromGlobal(topLeft);//坐标变换
+		selectionAreaGeometry.setRect(topLeft.x(), topLeft.y(), width, height);
+		selectionArea->setGeometry(selectionAreaGeometry);
+		//qDebug() << "SelectionArea Geometry: " << selectionAreaGeometry;
+		emit selectionAreaResized(selectionAreaGeometry);
 	}
 }
 
@@ -987,6 +1155,27 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 {
 	raise();
 	setFocus();
+	if (e->buttons() & (Qt::LeftButton | Qt::RightButton))
+	{
+		if (windowMoveResize.resizeDirection == windowMoveResize.None && !titleBarFrameGeometry.contains(e->pos()))
+		{
+			selectionArea->reset();
+			emit selectionAreaResized(selectionArea->getGeometry());
+		}
+	}
+	//记录鼠标按下时候的数据
+	//窗口移动与大小
+	{
+		windowMoveResize.originGeo = QRect(geometry().topLeft(), QSize(geometry().size()));
+		windowMoveResize.mouseDownPos = QCursor::pos();
+		windowMoveResize.move = false;
+	}
+	//窗口内部框选item
+	{
+		selectionArea->raise();
+		selectionArea->setMouseDownPos(QCursor::pos());
+	}
+
 	switch (e->button())
 	{
 	case Qt::MouseButton::LeftButton:
@@ -995,10 +1184,6 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 		{
 			//GetWindowRect((HWND)this->winId(), &windowMoveResize.originGeo);
 			//GetCursorPos(&windowMoveResize.mouseDownPos);
-			QCursor cursor;
-			windowMoveResize.originGeo = QRect(geometry().topLeft(), QSize(geometry().size()));
-			windowMoveResize.mouseDownPos = cursor.pos();
-			windowMoveResize.move = false;
 			QPoint pos = e->pos();
 			if (pos.x() < borderWidth)//左边界
 			{
@@ -1029,20 +1214,6 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 					windowMoveResize.move = true;
 			}
 		}
-
-
-		//选中区域的reset
-		if (selectionArea)
-		{
-			QPoint p = e->pos();// mapToParent(e->pos());
-			selectionRect = QRect(p.x(), p.y(), 0, 0);
-			selectionArea->reset();
-			selectionArea->raise();
-			selectionArea->show();
-			selectionArea->move((selectionRect.left() < selectionRect.right() ? selectionRect.left() : selectionRect.right()),
-				(selectionRect.top() < selectionRect.bottom() ? selectionRect.top() : selectionRect.bottom()));
-			selectionArea->reset();
-		}
 		break;
 	}
 	case Qt::MouseButton::RightButton:
@@ -1054,6 +1225,7 @@ void MyFileListWidget::mousePressEvent(QMouseEvent* e)
 	}
 }
 
+
 void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 {
 	windowMoveResize.resizeDirection = windowMoveResize.None;
@@ -1061,200 +1233,13 @@ void MyFileListWidget::mouseReleaseEvent(QMouseEvent* e)
 	{
 	case Qt::MouseButton::LeftButton:
 	{
-		if(selectionArea)
-			selectionArea->hide();
+		//将 selectionArea 的位置和大小重置为0
+		selectionArea->reset();
 	}
 		break;
 	case Qt::MouseButton::RightButton:
 	{
-		QPoint curPos = QCursor::pos();
-		//创建菜单
-		MyMenu* menu1 = new MyMenu(this);
-		MyMenuAction* actionRefresh = new MyMenuAction(iconRefresh, "刷新\tE");
-		connect(actionRefresh, &MyMenuAction::triggered, this, &MyFileListWidget::refreshSelf);
-		MyMenuAction* pasteAction = new MyMenuAction(iconPaste, "粘贴\tP");
-		connect(pasteAction, &MyMenuAction::triggered, this, &MyFileListWidget::pasteProc);
-		MyMenuAction* newFileOrFolderAction = new MyMenuAction(iconCirclePlus, "新建\tW");
-
-
-		//------------------------------------------------------
-		//二级菜单：Desktop Organizer
-		MyMenuAction* desktopOrganizerAction = new MyMenuAction(QIcon(), "Desktop Organizer");
-		MyMenu* desktopOrganizerMenu = new MyMenu(menu1);
-		desktopOrganizerMenu->addAction(
-			"Create new window",
-			this,
-			[&]() {
-				signed long long wid = 0;
-				{
-					std::lock_guard<std::mutex> lock(mtxWindowIdList);
-					while ((wid++) >= 0)//wid为负数时表示id已经被占用完
-					{
-						if (std::find(windowIdList.begin(), windowIdList.end(), wid) == windowIdList.end())
-							break;
-					}
-					if (wid < 0)
-					{
-						QMessageBox::critical(this, "Error", "No available window id!");
-						return;
-					}
-				}
-				createChildWindow(this,
-					"DesktopOrganizer SubWindow",
-					L"",
-					windowsConfigName,
-					wid,
-					true,
-					QRect(mapFromGlobal(curPos), size() / 3),
-					true);
-			}
-		);
-		desktopOrganizerAction->setMenu(desktopOrganizerMenu);
-		//二级菜单：Widget控制
-		bool bClose = false;
-		MyMenuAction* myFileListWidgetAction = new MyMenuAction(QIcon(), "Widget Control");
-		MyMenu* widgetControlMenu = new MyMenu(menu1);
-		widgetControlMenu->addAction("关闭Widget", this, [&] { /*MyFileListWidget::*/bClose = true; });
-		widgetControlMenu->addAction("退出软件", this, []() {exit(0); });
-		widgetControlMenu->addAction("(主窗口已嵌入桌面)")->setEnabled(false);
-		widgetControlMenu->addAction("脱离主窗口", this, [&]() {
-			SetParent((HWND)this->winId(), 0);
-			});
-		widgetControlMenu->addAction("嵌入主窗口", this, [&]() {
-			SetParent((HWND)this->winId(), (HWND)parent->winId());
-			});
-		widgetControlMenu->addAction("取消无边框窗口属性", this, [&]() {
-			QRect rect(geometry());
-			this->setWindowFlags(this->windowFlags() & (~Qt::FramelessWindowHint));
-			move(rect.topLeft());
-			resize(rect.size());
-			show();
-			});
-		widgetControlMenu->addAction("添加无边框窗口属性", this, [&]() {
-			QRect rect(geometry());
-			this->setWindowFlags(this->windowFlags() | (Qt::FramelessWindowHint));
-			move(rect.topLeft());
-			resize(rect.size());
-			show();
-			});
-		myFileListWidgetAction->setMenu(widgetControlMenu);
-
-
-		//二级菜单：新建
-		MyMenu* newOptions = new MyMenu(menu1);
-		newOptions->addAction(iconFolder, "文件夹");
-		newOptions->addAction(iconLink, "快捷方式");
-		newFileOrFolderAction->setMenu(newOptions);
-		newOptions->addSeparator();
-		//newOptions->addAction("txt文本文档");
-		//获取右键新建文件子菜单列表项
-		QSettings shellNewContents(HKEY_CURRENT_USER_ShellNew_STR, QSettings::NativeFormat);
-		QVariant extensionsValue = shellNewContents.value("Classes");
-		if (extensionsValue.typeId() == QMetaType::QStringList)
-		{
-			QStringList extensionList = extensionsValue.toStringList();
-			extensionList.insert(0, ".txt");
-			std::cout << UTF8ToANSI("新建一栏扩展名：");
-			for (qsizetype i = 0; i < extensionList.size(); i++)
-			{
-				std::cout << extensionList[i].toStdString() << " ";
-
-				std::wstring extension = extensionList[i].toStdWString();
-				if (extension == L".library-ms" || extension == L".lnk"/* || extension == L"Folder"*/)
-					continue;//排除指定文件类型
-				if (extension.length() > 0)
-				{
-					SHFILEINFO info;
-					if (SHGetFileInfo(extension.c_str(), FILE_ATTRIBUTE_NORMAL, &info, sizeof(info), SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES | SHGFI_ICON))
-					{
-						std::wstring type = info.szTypeName;
-						QIcon icon = QPixmap::fromImage(QImage::fromHICON(info.hIcon));
-
-						newOptions->addAction(icon, QString::fromStdWString(type),
-							QKeySequence(),//加速键
-							this, [=]() {
-								if (pathsList.size() == 1)
-								{
-									newFileProc(extension, pathsList.front());
-								}
-								else if (pathsList.size() > 1)
-								{
-									MyMenu* newFilePathSelectionMenu = new MyMenu(this);
-									for (auto iter = pathsList.begin(); iter != pathsList.end(); iter++)
-									{
-										newFilePathSelectionMenu->addAction(QIcon(), QString::fromStdWString(*iter),
-											QKeySequence(),
-											this, [=]() {
-												newFileProc(extension, *iter);
-											});
-									}
-
-									newFilePathSelectionMenu->exec(QCursor::pos());
-									newFilePathSelectionMenu->deleteLater();
-								}
-
-							});
-					}
-				}
-
-				// 注册表法通过文件后缀获取文件类型描述
-				//QSettings filePathAtRegister(QString(HKEY_CLASSES_ROOT_STR) + "\\" + vl[i], QSettings::NativeFormat);
-				//QVariant fn = filePathAtRegister.value(".", true);
-				//if (fn.typeId() == QMetaType::Bool && fn.toBool())
-				//	continue;
-				//QSettings fileDescription(QString(HKEY_CLASSES_ROOT_STR) + "\\" + fn.toString(), QSettings::NativeFormat);
-				//fn = fileDescription.value(".", true);
-				//if (fn.typeId() == QMetaType::Bool && fn.toBool())
-				//	continue;
-				//QString fileDescriptionText = fn.toString();
-				//newOptions->addAction(fileDescriptionText);
-			}
-			std::cout << std::endl;
-		}
-
-
-		MyMenuAction* displayFullActions = new MyMenuAction("显示全部选项");
-		connect(displayFullActions, &MyMenuAction::triggered, this, [=]() {
-			showDesktopOldPopupMenu(curPos);
-			});
-
-		// 菜单添加列表项
-		menu1->addAction(actionRefresh);
-		menu1->addSeparator();
-		//menu1->addAction(iconCMD, "打开cmd\n    - 程序运行的工作路径\tO", this, [=]() { MyFileListWidget::openCMD(L""); });
-		//for (std::wstring path : pathsList)
-		//{
-		//	MyMenuAction* openCMDAction = new MyMenuAction();
-		//	openCMDAction->setText(QString("打开cmd\n    - ") + QString::fromStdWString(path));
-		//	openCMDAction->setIcon(iconCMD);
-		//	connect(openCMDAction, &MyMenuAction::triggered, this, [=]() { MyFileListWidget::openCMD(path); });
-		//	menu1->addAction(openCMDAction);
-		//}
-		MyMenuAction* cmdAction = new MyMenuAction(iconCMD, "打开cmd");
-		MyMenu* cmdListMenu = new MyMenu(menu1);
-		cmdListMenu->addAction("程序运行的工作路径", this, [=]() { MyFileListWidget::openCMD(L""); });
-		for (std::wstring path : pathsList)
-			cmdListMenu->addAction(QString::fromStdWString(path), this, [=]() { MyFileListWidget::openCMD(path); });
-		cmdAction->setMenu(cmdListMenu);
-		menu1->addAction(cmdAction);
-
-		menu1->addSeparator();
-		menu1->addAction(pasteAction);
-		menu1->addSeparator();
-		menu1->addAction(desktopOrganizerAction);
-		menu1->addAction(myFileListWidgetAction);
-		menu1->addSeparator();
-		menu1->addAction(newFileOrFolderAction);
-		menu1->addSeparator();
-		menu1->addAction(displayFullActions);// 添加二级菜单
-
-		connect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
-		menu1->setCursorPos(curPos);
-		menu1->exec(curPos);
-		disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
-		menu1->deleteLater();
-		if (bClose)
-			close();
+		CreateDesktopPopupMenu();
 	}
 		break;
 	default:
@@ -1298,13 +1283,15 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 			255 - backgroundColor.blue(),
 			255);
 	}
-	QPen pen(borderColor, borderWidth);
-
+	//背景颜色
 	p.fillRect(rect(), backgroundColor);
+	//边框颜色
+	QPen pen(borderColor, borderWidth);
 	p.save();
 	p.setPen(pen);
 	p.drawRect(rect());
 	p.restore();
+	//标题栏自绘
 	if (ifShowTitle)
 	{
 		p.save();
@@ -1404,7 +1391,16 @@ void MyFileListWidget::paintEvent(QPaintEvent* e)
 		p.drawText(textRect, windowTitle(), QTextOption(Qt::AlignCenter));
 		p.restore();
 	}
+
 	QWidget::paintEvent(e);
+
+	//绘制拖动多选框
+	//p.fillRect(selectionArea.getGeometry(), selectionArea.getBackgroundColor());
+	//p.save();
+	//pen = QPen(selectionArea.getBorderColor(), selectionArea.getBorderWidth());
+	//p.setPen(pen);
+	//p.drawRect(selectionArea.getGeometry());
+	//p.restore();
 }
 
 void MyFileListWidget::moveEvent(QMoveEvent* e)
@@ -1470,43 +1466,167 @@ bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, q
 
 bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 {
-	switch (event->type())
+	// 处理子控件的事件
+	if (watched->objectName().contains("MyFileListItem") && watched->parent() == this)
+		//要求子控件必须是MyFileListItem
 	{
-	case QEvent::MouseButtonPress:
-	{
-		QMouseEvent* e = static_cast<QMouseEvent*>(event);
-		switch (e->button())
+		MyFileListItem* item = dynamic_cast<MyFileListItem*>(watched);
+		QMouseEvent* e = dynamic_cast<QMouseEvent*>(event);
+		if (item)
 		{
-		case Qt::LeftButton:
-		{
+			switch (event->type())
+			{
+			case QEvent::MouseButtonPress:
+			{
+				if (e && (e->buttons() & (Qt::LeftButton | Qt::RightButton)))
+				{
 #ifdef _DEBUG
-			std::cout << "leftButtonPress" << std::endl;
+					std::cout << "MouseButtonPress: MyFileListItem: " << UTF8ToANSI(item->objectName().toStdString()) << std::endl;
 #endif // _DEBUG
+					keyboardModifiers = QGuiApplication::keyboardModifiers();
+					if (keyboardModifiers & Qt::ControlModifier)
+					{
 
-			break;
-		}
-		default:
-			break;
-		}
-		break;
-	}
-	case QEvent::MouseButtonRelease:
-	{
-		QMouseEvent* e = static_cast<QMouseEvent*>(event);
-		switch (e->button())
-		{
-		case Qt::LeftButton:
-		{
+					}
+					else
+					{
+						if (!item->isChecked())
+						{
+							selectionArea->reset();
+							emit selectionAreaResized(selectionArea->getGeometry());
+							item->setChecked(true);
+						}
+					}
+				}
+				break;
+			}
+			case QEvent::MouseButtonRelease:
+			{
 #ifdef _DEBUG
-			std::cout << "leftButtonRelease" << std::endl;
-#endif
+				std::cout << "MouseButtonRelease: MyFileListItem: " << UTF8ToANSI(item->objectName().toStdString()) << std::endl;
+#endif // _DEBUG
+				if (e && (e->button() == Qt::LeftButton))//左键松开
+				{
+					// Ctrl键按下时，选中或取消选中
+					if (keyboardModifiers & Qt::ControlModifier)
+					{
+						if (item->isChecked())
+							item->setChecked(false);
+						else
+							item->setChecked(true);
+					}
+					else
+					{
+						if (item->isChecked())
+						{
+							selectionArea->reset();
+							emit selectionAreaResized(selectionArea->getGeometry());
+							item->setChecked(true);
+						}
+					}
+				}
+				else if (e && (e->buttons() & Qt::RightButton))//右键松开
+				{
+
+				}
+				break;
+			}
+			case QEvent::MouseMove:
+			{
+				//#ifdef _DEBUG
+				//std::cout << "MouseMove: MyFileListItem: " << UTF8ToANSI(item->objectName().toStdString()) << std::endl;
+				//#endif // _DEBUG
+				if (e && e->buttons() & (Qt::LeftButton | Qt::RightButton))
+				{
+					QDrag* drag = new QDrag(this);
+					std::wstring itemNameWithPath = item->getPath() + item->text().toStdWString();
+					const auto& ip = itemsMap[itemNameWithPath];
+					const auto& currentItemPosition = ip.position;
+					const auto& currentItemIndex = calculateIndex(currentItemPosition);
+					// 计算当前item周围一定范围内的item的position
+					Index startIndex;
+					if (currentItemIndex.x > 2)
+						startIndex.x = currentItemIndex.x - 2;
+					else if (currentItemIndex.x == 2)
+						startIndex.x = currentItemIndex.x - 1;
+					else
+						startIndex.x = currentItemIndex.x;
+					if (currentItemIndex.y > 1)
+						startIndex.y = currentItemIndex.y - 1;
+					else
+						startIndex.y = currentItemIndex.y;
+					Index endIndex;
+					if (currentItemIndex.y < itemsNumPerColumn)
+						endIndex.y = currentItemIndex.y + 1;
+					else
+						endIndex.y = currentItemIndex.y;
+					endIndex.x = currentItemIndex.x + 4;
+					//鼠标坐标相对于拖动显示的pixmap左上角的偏移量
+					drag->setHotSpot(mapFromGlobal(e->globalPosition().toPoint()) - calculatePosFromIndex(startIndex));//设置拖动的热点位置
+					//拖动时，文件以及自定义数据
+					QMimeData* mineData = new QMimeData();
+					//选中的items map
+					const auto& selectedItemsMap = dragArea->getSelectedItemsMap();
+					QList<QUrl> urls;//拖动的文件列表
+					QList<DragArea::CustomData> customDatas;//自定义数据，用于移动控件放下时候获取位置
+					for (auto it = selectedItemsMap.begin(); it != selectedItemsMap.end(); it++)
+					{
+						urls.push_back(QUrl::fromLocalFile(QString::fromStdWString(it->second.path)));
+						DragArea::CustomData customData;
+						customData.position = it->second.position;
+						customData.offset = mapFromGlobal(e->globalPosition().toPoint()) - it->second.geometryInParent.topLeft();
+						customDatas.push_back(customData);
+					}
+					mineData->setUrls(urls);//设置文件路径列表
+					//设置自定义数据
+					mineData->setData("application/custom-data", DragArea::serializeCustomDataList(customDatas));
+					//设置拖动数据
+					drag->setMimeData(mineData);
+					//拖动显示的图像
+					QPixmap dragPixmap(
+						QSize(
+							itemSize.width() * 7 + itemSpacing.column * 6,
+							itemSize.height() * 3 + itemSpacing.line * 2
+						)
+					);
+					dragPixmap.fill(Qt::transparent);//用透明色填充
+					// 检测周围的item有哪些是选中的
+					std::vector<Index> itemsInRange = getSelectedItemsInRange(Range(startIndex, endIndex));
+					//从左到右，从上到下排序
+					std::sort(itemsInRange.begin(), itemsInRange.end(), [](const Index& a, const Index& b) {
+						return a.x < b.x || (a.x == b.x && a.y < b.y);
+						});
+					//遍历添加item到拖动图像
+					for (auto i = itemsInRange.begin(); i != itemsInRange.end(); i++)
+					{
+						const auto& ip = itemsMap[positionNameWithPathMap[calculatePositionNumberFromIndex(*i)]];
+						if (ip.item)
+						{
+							/*
+							QPoint itemPosInPixmap = relativePosTransition(this->geometry().topLeft(), calculatePosFromIndex(*i), calculatePosFromIndex(startIndex));
+							static_cast<MyFileListItem*>(ip.item)->render(&dragPixmap, itemPosInPixmap, rect());
+							*/
+							QPoint itemPosInPixmap = relativePosTransition(this->geometry().topLeft(), calculatePosFromIndex(*i), calculatePosFromIndex(startIndex));
+							QPainter painter(&dragPixmap);
+							auto shadowItem = static_cast<MyFileListItem*>(ip.item)->getShadowItem();
+							QRect imageRect = shadowItem->getImageRect();
+							QImage image = shadowItem->getImage();
+							painter.drawImage(QRect(itemPosInPixmap + imageRect.topLeft(), imageRect.size()), image);
+							painter.setFont(shadowItem->getFont());
+							painter.setPen(shadowItem->getPen());
+							painter.drawText(QRect(itemPosInPixmap + shadowItem->getTextRect().topLeft(), shadowItem->getTextRect().size()), shadowItem->getText(), shadowItem->getTextOption());
+						}
+					}
+					drag->setPixmap(dragPixmap);
+					drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::MoveAction);
+					drag->deleteLater();
+				}
+
+				break;
+			}
 			break;
+			}
 		}
-		default:
-			break;
-		}
-		break;
-	}
 	}
 	return QWidget::eventFilter(watched, event);
 }
@@ -1515,41 +1635,10 @@ void MyFileListWidget::dragEnterEvent(QDragEnterEvent* e)
 {
 	if (e->mimeData()->hasFormat("text/uri-list"))
 		e->acceptProposedAction();
-	if (dragArea)
-	{
-		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
-		QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
-		// std::cout << pos.x() << "," << pos.y() << std::endl;
-
-		dragArea->moveRelative(
-			QPoint(
-				pos.x() - dragArea->getCursorPosOffsetWhenMousePress().x(),
-				pos.y() - dragArea->getCursorPosOffsetWhenMousePress().y()
-				),
-			nullptr, this
-			);
-	}
-
 }
 
 void MyFileListWidget::dragMoveEvent(QDragMoveEvent* e)
 {
-	if (dragArea)
-	{
-		//QPoint pos(e->globalPosition().x(), e->globalPosition().y());
-		//QPoint pos(e->position().toPoint().x(), e->position().toPoint().y());
-		QCursor cur;
-		QPoint pos(cur.pos());
-		// std::cout << pos.x() << "," << pos.y() << std::endl;
-
-		dragArea->moveRelative(
-			QPoint(
-				pos.x() - dragArea->getCursorPosOffsetWhenMousePress().x(),
-				pos.y() - dragArea->getCursorPosOffsetWhenMousePress().y()
-			),
-			this, nullptr
-		);
-	}
 
 }
 
@@ -1564,49 +1653,95 @@ void MyFileListWidget::dragLeaveEvent(QDragLeaveEvent* e)
 // 接受QDrag的drop时调用
 void MyFileListWidget::dropEvent(QDropEvent* e)
 {
-	if(dragArea)
-		dragArea->hide();
-	if (pathsList.size())
+	//if (pathsList.size())
+	//{
+	//	std::wstring goalPath;
+	//	if (pathsList.size() > 1)
+	//	{
+	//		QMenu menu(this);
+	//		for (std::wstring path : pathsList)
+	//		{
+	//			QAction* action = new QAction(QString::fromStdWString(path), &menu);
+	//			connect(action, &QAction::triggered, this, [&goalPath, action]() {
+	//				goalPath = action->text().toStdWString();
+	//				});
+	//			menu.addAction(action);
+	//		}
+	//		menu.exec(QCursor::pos());
+	//	}
+	//	else
+	//		goalPath = pathsList[0];
+	//	if (!goalPath.empty())
+	//	{
+	//		PathCompletion(goalPath);
+	//		std::wstring localFiles;
+	//		for (QUrl url : e->mimeData()->urls())
+	//		{
+	//			std::wstring localFile = url.toLocalFile().replace("/", "\\").toStdWString();
+	//			//std::wstring fileName = url.fileName().toStdWString();
+	//			localFiles += localFile + L'\0';
+	//		}
+	//		const wchar_t* pFrom = localFiles.c_str();
+	//		const wchar_t* pTo = (goalPath).data();
+	//		SHFILEOPSTRUCT fileOp = { 0 };
+	//		//ZeroMemory(&fileOp, sizeof(fileOp));
+	//		fileOp.fAnyOperationsAborted = 0;
+	//		fileOp.hwnd = (HWND)this->winId();
+	//		fileOp.pFrom = pFrom;
+	//		fileOp.pTo = pTo;
+	//		fileOp.wFunc = FO_COPY;
+	//		//fileOp.fFlags
+	//		SHFileOperation(&fileOp);
+	//	}
+	//}
+	if (e->source() == this)
 	{
-		std::wstring goalPath;
-		if (pathsList.size() > 1)
+		const QMimeData* mimeData = e->mimeData();
+		if (mimeData->hasFormat("application/custom-data"))
 		{
-			QMenu menu(this);
-			for (std::wstring path : pathsList)
+			QList<DragArea::CustomData> data = DragArea::deserializeCustomDataList(mimeData->data("application/custom-data"));
+			std::cout << "Custom data list: \n";
+			for (auto i = data.begin(); i != data.end(); i++)
 			{
-				QAction* action = new QAction(QString::fromStdWString(path), &menu);
-				connect(action, &QAction::triggered, this, [&goalPath, action]() {
-					goalPath = action->text().toStdWString();
-					});
-				menu.addAction(action);
+				std::cout << "   Position: " << i->position << "\t";
+				std::cout << "Offset: (" << i->offset.x() << "," << i->offset.y() << ")" << std::endl;
+				QPoint itemPos = e->position().toPoint() - i->offset;
+				if (!positionNameWithPathMap.count(i->position))
+					continue;
+				std::wstring nameWithPath = positionNameWithPathMap[i->position];
+				if (!itemsMap.count(nameWithPath))
+					continue;
+				ItemProp& ip = itemsMap[nameWithPath];
+				MyFileListItem* item = static_cast<MyFileListItem*>(ip.item);
+				ip.position = calculatePositionNumberFromPos(itemPos);
+				long long position = ip.position;
+				while (positionNameWithPathMap.count(position))
+					position += 1;
+				for (long long iPosition = position - 1; iPosition >= ip.position; iPosition--)
+				{
+					std::wstring nwp = positionNameWithPathMap[iPosition];
+					itemsMap[nwp].position = iPosition + 1;
+					positionNameWithPathMap.erase(iPosition);
+					positionNameWithPathMap[iPosition + 1] = nwp;
+				}
+				std::cout << "   New position: " << ip.position << std::endl;
+				positionNameWithPathMap.erase(i->position);
+				positionNameWithPathMap[ip.position] = nameWithPath;
+				//重新添加item到DragArea
+				auto selectedItemsMap = dragArea->getSelectedItemsMap();
+				if (!selectedItemsMap.count(nameWithPath))
+					continue;
+				DragArea::ItemWithPosition iwp = selectedItemsMap[nameWithPath];
+				iwp.position = ip.position;
+				iwp.geometryInParent = QRect(
+					calculatePosFromIndex(calculateIndex(ip.position)),
+					iwp.geometryInParent.size()
+				);
+				dragArea->addItem(iwp);
 			}
-			menu.exec(QCursor::pos());
 		}
-		else
-			goalPath = pathsList[0];
-		if (!goalPath.empty())
-		{
-			PathCompletion(goalPath);
-			std::wstring localFiles;
-			for (QUrl url : e->mimeData()->urls())
-			{
-				std::wstring localFile = url.toLocalFile().replace("/", "\\").toStdWString();
-				//std::wstring fileName = url.fileName().toStdWString();
-				localFiles += localFile + L'\0';
-			}
-			const wchar_t* pFrom = localFiles.c_str();
-			const wchar_t* pTo = (goalPath).data();
-			SHFILEOPSTRUCT fileOp = { 0 };
-			//ZeroMemory(&fileOp, sizeof(fileOp));
-			fileOp.fAnyOperationsAborted = 0;
-			fileOp.hwnd = (HWND)this->winId();
-			fileOp.pFrom = pFrom;
-			fileOp.pTo = pTo;
-			fileOp.wFunc = FO_COPY;
-			//fileOp.fFlags
-			SHFileOperation(&fileOp);
-		}
-	}
+		writeConfig(configName);
+	}//拖放item，本软件窗口之间的item拖放，不涉及文件复制和移动
 }
 
 
@@ -1942,9 +2077,12 @@ bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreat
 						if (conf.size() < 4)
 							continue;
 #endif // _DEBUG
+						mtxItemsMap.lock();
 						itemsMap[conf[1] + conf[0]] = {
 							stoll(conf[3]), 0, conf[0], conf[1], stoll(conf[2])
 						};
+						positionNameWithPathMap[stoll(conf[2])] = conf[1] + conf[0];
+						mtxItemsMap.unlock();
 						if (whetherToCreateItem)
 						{
 							auto& windowProp = windowsMap[stoll(conf[3])];
@@ -2007,6 +2145,7 @@ bool MyFileListWidget::writeConfig(std::wstring nameWithPath)
 		else
 		{
 			string(*encodeType)(wstring) = wstr2str_2UTF8;
+			std::lock_guard<std::mutex> lock(mtxItemsMap);
 			for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
 			{
 				outConfig << "\"" << encodeType(i->second.name);
@@ -2042,7 +2181,8 @@ void MyFileListWidget::checkFilesChange(std::wstring path, bool isSingleShot)
 	{
 		Sleep(10);
 
-		std::lock_guard<std::mutex> lock(mtxItemTaskQueue);//互斥锁加锁
+		std::lock_guard<std::mutex> lock1(mtxItemTaskQueue);//互斥锁加锁
+		std::lock_guard<std::mutex> lock2(mtxItemsMap);//互斥锁加锁
 		intptr_t FileIndex = 0;
 		WIN32_FIND_DATA ffd;
 		LARGE_INTEGER filesize;
@@ -2059,6 +2199,7 @@ void MyFileListWidget::checkFilesChange(std::wstring path, bool isSingleShot)
 			MessageBox((HWND)this->winId(), L"检测文件更改失败，软件可能无法正常运行", L"错误", MB_ICONERROR);
 		}
 		auto tmpItemsMap = itemsMap;// 新建临时map
+
 		// List all the files in the directory with some info about them.
 		do
 		{
@@ -2128,18 +2269,14 @@ void MyFileListWidget::checkFilesChange(std::wstring path, bool isSingleShot)
 			}
 			tmpItemsMap.erase(i++);
 		}
-		size_t npcBack = itemsNumPerColumn;
+		//long long npcBack = itemsNumPerColumn;
 		/*重新计算item大小和每列item的个数*/
 		changeItemSizeAndNumbersPerColumn();
 		// 变小
 		for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
 		{
-			int xIndex = i->second.position / itemsNumPerColumn + 1;
-			int yIndex = i->second.position % itemsNumPerColumn + 1;
-			QPoint itemPos = QPoint(
-				(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column,
-				(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line
-			);
+			Index index = calculateIndex(i->second.position);
+			QPoint itemPos = calculatePosFromIndex(index);
 			if (i->second.item)
 			{
 				if (static_cast<MyFileListItem*>(i->second.item)->size() != itemSize)
@@ -2349,8 +2486,7 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		if (itemsNumPerColumn == 0)
 			itemsNumPerColumn = 1;
 		/*计算新添加的item的合适位置的index*/
-		int xIndex = st / itemsNumPerColumn + 1;
-		int yIndex = st % itemsNumPerColumn + 1;
+		Index index = calculateIndex(st);
 		
 		/*将新添加的item加入map*/
 		auto& itemProp = itemsMap[nameWithPath];
@@ -2360,8 +2496,8 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		std::cout << "New item name: " << wstr2str_2ANSI(name) << "\n";
 		std::cout << "New item path: " << wstr2str_2ANSI(path) << "\n";
 		std::cout << "New item position: " << (position == -1 ? (long long)st : position) << "\n";
-		itemsMap[nameWithPath] = { windowId, pLWItem, name, path, (position == -1 ? (long long)st : position)};
-
+		auto& ip = itemsMap[nameWithPath] = { windowId, pLWItem, name, path, (position == -1 ? (long long)st : position)};
+		positionNameWithPathMap[ip.position] = nameWithPath;
 
 		/*新添加的item的图标*/
 		QImage pLWItemImage;
@@ -2450,12 +2586,10 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		pLWItem->setViewMode(viewMode);
 		pLWItem->setPath(path);
 		pLWItem->setImage(pLWItemImage);
-		pLWItem->setSelectionArea(selectionArea);
-		pLWItem->setGrabArea(dragArea);
+		pLWItem->setObjectName(QString("MyFileListItem_") + QString::number(position));
+		pLWItem->installEventFilter(this);// 安装事件过滤器
 		//pLWItem->adjustSize();
-		QPoint itemPos = QPoint(
-			(xIndex - 1) * (itemSize.width()) + xIndex * itemSpacing.column, 
-			(yIndex - 1) * (itemSize.height()) + yIndex * itemSpacing.line);
+		QPoint itemPos = calculatePosFromIndex(index);
 		pLWItem->move(itemPos);
 		//pLWItem->setImage(QImage::fromHICON(sfi.hIcon));
 		//connect(pLWItem, &MyFileListItem::removeSelfSignal, this, [=]() {
@@ -2464,16 +2598,16 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		connect(pLWItem, &MyFileListItem::checkChange, this, [=](bool checkState) {
 			if (checkState)
 			{
-				ItemProp ip = itemsMap[path + name];
-				if (dragArea)
-					dragArea->addItem(ip);
+				ItemProp& ip = itemsMap[path + name];
+				DragArea::ItemWithPosition iwp = { ip.name, ip.path, pLWItem->getImage(), pLWItem->geometry(), ip.position };
+				dragArea->addItem(iwp);
 			}
 			else
 			{
-				if (dragArea)
-					dragArea->removeItem(name, path);
+				dragArea->removeItem(name, path);
 			}
-			});
+			}, Qt::QueuedConnection);
+		connect(this, &MyFileListWidget::selectionAreaResized, pLWItem, &MyFileListItem::judgeSelection);
 		pLWItem->show();
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
@@ -2489,6 +2623,8 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 		void* item = ip.item;
 		if (ip.position < indexesState.size())
 			indexesState[ip.position] = L'0';
+		if (positionNameWithPathMap.count(ip.position))
+			positionNameWithPathMap.erase(ip.position);
 		itemsMap.erase(nameWithPath);
 		if (item)
 		{
@@ -2512,6 +2648,7 @@ void MyFileListWidget::renameItem(std::wstring oldName, std::wstring path, std::
 		itemsMap[newNameWithPath] = ip;
 		itemsMap.erase(oldNameWithPath);
 		static_cast<MyFileListItem*>(item)->setText(QString::fromStdWString(newName));
+		positionNameWithPathMap[ip.position] = newNameWithPath;
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
 }

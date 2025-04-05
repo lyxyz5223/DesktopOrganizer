@@ -8,6 +8,63 @@
 #include "DragArea.h"
 #include "SelectionArea.h"
 #include <QMimeData>
+#include <qpen.h>
+#include <qtextoption.h>
+
+class MyFileListShadowItem
+{
+private:
+	QRect& imageRect;
+	QRect& itemRect;
+	QImage& itemImage;
+	QString& text;
+	QRect& textRect;
+	QFont& textFont;
+	QPen& textPen;
+	QTextOption& textOption;
+
+public:
+	~MyFileListShadowItem() {}
+	MyFileListShadowItem(
+		QRect& itemRect,
+		QImage& ItemImage,
+		QRect& ImageRect,
+		QString& Text,
+		QRect& TextRect,
+		QFont& TextFont,
+		QPen& TextPen,
+		QTextOption& TextOption)
+		: itemRect(itemRect),
+		imageRect(ImageRect), itemImage(ItemImage),
+		textRect(TextRect), text(Text),
+		textFont(TextFont),
+		textPen(TextPen),
+		textOption(TextOption) {}
+	QRect getItemRect() const {
+		return itemRect;
+	}
+	QRect getImageRect() const {
+		return imageRect;
+	}
+	QImage getImage() const {
+		return itemImage;
+	}
+	QString getText() const {
+		return text;
+	}
+	QRect getTextRect() const {
+		return textRect;
+	}
+	QFont getFont() const {
+		return textFont;
+	}
+	QPen getPen() const {
+		return textPen;
+	}
+	QTextOption getTextOption() const {
+		return textOption;
+	}
+};
 
 
 
@@ -21,8 +78,7 @@ public:
 	};
 	~MyFileListItem() {}
 	MyFileListItem(QWidget* parent, QSize defaultSize);
-	MyFileListItem(const MyFileListItem& item, bool isShadow = false/*拖动的影子*/);
-	void initialize(QWidget* parent, QSize defaultSize, bool isShadow);
+	void initialize(QWidget* parent, QSize defaultSize);
 	void setViewMode(ViewMode View_Mode) {
 		viewMode = View_Mode;
 	}
@@ -42,16 +98,10 @@ public:
 	std::wstring getPath() {
 		return MyPath;
 	}
-	void onSelectionAreaResize();
-	void setSelectionArea(SelectionArea* selectionArea) {
-		if (this->selectionArea)
-			disconnect(this->selectionArea, &SelectionArea::resized, this, &MyFileListItem::onSelectionAreaResize);
-		this->selectionArea = selectionArea;
-		connect(selectionArea, &SelectionArea::resized, this, &MyFileListItem::onSelectionAreaResize);
-	}
-	void setGrabArea(DragArea* dragArea) {
-		this->dragArea = dragArea;
-	}
+	//当框选区域变化时候，父窗口通知此窗口
+	void judgeSelection(QRect selectionArea);
+
+
 	void setChecked(bool judge) {
 		if (isChecked() != judge)
 		{
@@ -59,14 +109,30 @@ public:
 			emit checkChange(judge);
 		}
 	}
-	void deleteLater() {
-		if (dragArea && isChecked())
-			dragArea->removeItem(text().toStdWString(), MyPath);
-		QPushButton::deleteLater();
-	}
+	//void deleteLater() {
+	//	QPushButton::deleteLater();
+	//}
 	auto getIconZoom() const {
 		return iconZoom;
 	}
+	void removeSelf();
+
+	QRect getEffectiveGeometry() const {
+		return QRect(geometry().topLeft(), backgroundRect.size());
+	}
+
+	bool shouldIgnore() const {
+		return bIgnore;
+	}
+	void setShouldIgnore(bool ignore) {
+		bIgnore = ignore;
+	}
+
+	MyFileListShadowItem* getShadowItem() const {
+		return shadowItem;
+	}
+
+
 protected:
 	void mousePressEvent(QMouseEvent* e) override;
 	void mouseReleaseEvent(QMouseEvent* e) override;
@@ -82,19 +148,22 @@ protected:
 
 signals:
 	void doubleClicked();
-	void removeSelfSignal();
-	void moveSignal(QPoint);
 	void checkChange(bool);
+	void resizeSignal(QSize size);
+	void moveSignal(QPoint pos);
 	void adjustSizeSignal();
 
 public slots:
 	void MenuClickedProc(QAction* action);
-	void removeSelfSlot();
 
 private:
+	MyFileListShadowItem* shadowItem
+		= new MyFileListShadowItem(
+			itemRect,
+			itemImage, imageRect,
+			elidedText, textRect, textFont, textPen, textOption);
 	ViewMode viewMode = ViewMode::Icon;
 	QImage itemImage;
-	QSize itemTextSize;// 文本字体大小，只包含height
 	std::wstring MyPath;
 
 	//paint
@@ -102,18 +171,21 @@ private:
 	QBrush bgBrush_Shadow = QColor(0,0,0,0);//background,alpha=0鼠标穿透
 	QBrush bgBrush_MouseMove = QColor(255, 255, 255, 75);//background
 	QBrush bgBrush_Selected = QColor(255, 255, 255, 125);//background
+
 	QBrush bgBrush = bgBrush_Default;//background
+	QRect itemRect;//itemRect
+	QRect backgroundRect;//item实际绘制的部分
+	QRect imageRect;//item图标
+	QString elidedText;//item文字
+	QRect textRect;//item文字Rect
+	QFont textFont;//item文字字体
+	QPen textPen;//item文字画笔
+	QTextOption textOption;//item文字选项
 
-	//
-	QPoint startPosOffset;// 鼠标与item左上角坐标的偏移，为正数
-	bool isShadowItem = false;
-	SelectionArea* selectionArea = nullptr;// 选择区域
-	DragArea* dragArea = nullptr;
-	QDrag* drag = nullptr;
-
-	double iconZoom = 3.0 / 5;//图标的缩放比例
-
+	double iconZoom = 5.0 / 7;//图标的缩放比例
+	bool bIgnore = false;//是否忽略鼠标事件
 };
+
 
 
 #endif //MYFILELISTITEM_H

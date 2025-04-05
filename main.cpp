@@ -66,6 +66,13 @@ int main(int argc, char *argv[])
     return a.exec();
 }
 
+//int main()
+//{
+//    //7-zip的InProcServer
+//    system("rundll32.exe -sta {23170F69-40C1-278A-1000-000100020000}");
+//
+//    return 0;
+//}
 //通过扩展名获取注册表执行COMMAND
 //#include <iostream>
 //#include <windows.h>
