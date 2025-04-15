@@ -4,6 +4,7 @@
 #include <iostream>
 #include <Windows.h>
 #include <functional>
+#include <map>
 
 class FileChangesChecker
 {
@@ -84,3 +85,19 @@ protected:
 	std::function<void(FileChangesChecker* checker, FileChanges fileChanges, void* parameter)> callbackFunction;
 };
 
+class FileChangesCheckerManager {
+private:
+	std::map<std::wstring, FileChangesChecker*> checkerMap;
+
+public:
+	FileChangesCheckerManager() {
+
+	}
+
+	FileChangesCheckerManager& operator<<(FileChangesChecker* checker) {
+		checkerMap[checker->getPath()] = checker;
+		return *this;
+	}
+
+
+};

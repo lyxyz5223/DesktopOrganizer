@@ -20,25 +20,47 @@ class DragArea
 {
 	
 public:
-	struct ItemWithPosition {
+	struct ShadowItemInformation {
 		std::wstring name;
 		std::wstring path;
 		QImage itemImage;
-		QRect geometryInParent;
-		long long position;
+		//QRect geometryInParent;
+		//long long position;
+		friend QDataStream& operator<< (QDataStream& stream, const ShadowItemInformation& data) {//序列化
+			stream << QString::fromStdWString(data.name);
+			stream << QString::fromStdWString(data.path);
+			stream << data.itemImage;
+			//stream << data.position;
+			return stream;
+		}
+		friend QDataStream& operator>> (QDataStream& stream, ShadowItemInformation& data) {//反序列化
+			QString name, path;
+			stream >> name;
+			stream >> path;
+			data.name = name.toStdWString();
+			data.path = path.toStdWString();
+			stream >> data.itemImage;
+			//stream >> data.position;
+			return stream;
+		}
 	};
 
 	static struct CustomData {
-		long long position;
+		ShadowItemInformation item;
 		QPoint offset;
+		void* source;
 		friend QDataStream& operator<< (QDataStream& stream, const CustomData& data) {//序列化
-			stream << data.position;
+			stream << data.item;
 			stream << data.offset;
+			stream << (long long)data.source;
 			return stream;
 		}
 		friend QDataStream& operator>> (QDataStream& stream, CustomData& data) {//反序列化
-			stream >> data.position;
+			stream >> data.item;
 			stream >> data.offset;
+			long long source;
+			stream >> source;
+			data.source = (void*)source;
 			return stream;
 		}
 	};
@@ -57,7 +79,7 @@ public:
 	}
 
 private:
-	std::unordered_map<std::wstring/*nameWithPath*/, ItemWithPosition> children_map;
+	std::unordered_map<std::wstring/*nameWithPath*/, ShadowItemInformation> children_map;
 	std::vector<std::wstring> children_keys;
 
 	//std::vector<int> leftMost;
@@ -76,9 +98,9 @@ public:
 	~DragArea() {}
 	DragArea(long long& ItemsNumPerColumn, QSize& ItemSize, Spacing& ItemSpacing);
 	void removeItem(std::wstring name, std::wstring path);
-	void addItem(ItemWithPosition iwp);
+	void addItem(ShadowItemInformation sii);
 
-	inline std::unordered_map<std::wstring, ItemWithPosition> getSelectedItemsMap() const {
+	inline std::unordered_map<std::wstring, ShadowItemInformation> getSelectedItemsMap() const {
 		return children_map;
 	}
 	inline std::vector<std::wstring> getSelectedItemsKeys() const {

@@ -53,7 +53,7 @@ void DragArea::removeItem(std::wstring name, std::wstring path)
 	std::wstring nameWithPath = path + name;
 	if (children_map.count(nameWithPath))
 	{
-		ItemWithPosition& childrenStruct = children_map[nameWithPath];
+		ShadowItemInformation& childrenStruct = children_map[nameWithPath];
 		auto iter_children_key = std::find(children_keys.begin(), children_keys.end(), nameWithPath);
 		if (iter_children_key != children_keys.end())
 			children_keys.erase(iter_children_key);
@@ -78,16 +78,14 @@ void DragArea::removeItem(std::wstring name, std::wstring path)
 	}
 }
 
-void DragArea::addItem(ItemWithPosition iwp)
+void DragArea::addItem(ShadowItemInformation sii)
 {
-	PathCompletion(iwp.path);
-	std::wstring nameWithPath = iwp.path + iwp.name;
+	PathCompletion(sii.path);
+	std::wstring nameWithPath = sii.path + sii.name;
 	children_map[nameWithPath] = {
-		iwp.name,
-		iwp.path,
-		iwp.itemImage,
-		iwp.geometryInParent,
-		iwp.position
+		sii.name,
+		sii.path,
+		sii.itemImage
 	};
 	auto iter = std::find(children_keys.begin(), children_keys.end(), nameWithPath);
 	if (iter == children_keys.end())

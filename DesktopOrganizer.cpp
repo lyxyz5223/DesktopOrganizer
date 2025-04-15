@@ -53,12 +53,11 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     this->resize(re.size());
     MyFileListWidget* pLWidget = new MyFileListWidget(this,
         std::vector<std::wstring>({ L"C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试", L"C:\\Users\\lyxyz5223\\Desktop"/*, L"D:\\1Downloads"*/}/*文件夹路径C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试*/),
-        L"main"/*configFile or database name*/,
-        L"windowsConfig", 0, false, false, L"Desktop Organizer Main Window");
+        L"config"/*configFile or database name*/,
+        L"windowsConfig", 0, true, L"Desktop Organizer Main Window", true);
     pLWidget->setViewMode(MyFileListItem::ViewMode::Icon);
     pLWidget->setBackgroundColor(QColor(255, 255, 255, 1));
     //pLWidget->readConfigFile(L"config.ini");
-    pLWidget->setSQLite3Database(db);
     pLWidget->resize(re.size());
     pLWidget->move(0, 0);
     //pLWidget->resize(re.size() * 2 / 3);

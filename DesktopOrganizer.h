@@ -30,9 +30,6 @@
 #include <strsafe.h>
 //#include <filesystem>//还是不用这个库吧
 
-//数据库
-#include "lib/SQLite/sqlite3.h"
-
 class DesktopOrganizer : public QMainWindow
 {
     Q_OBJECT
@@ -41,15 +38,9 @@ public:
     DesktopOrganizer(QWidget *parent = nullptr);
     ~DesktopOrganizer();
 
-    void setSQLite3Database(sqlite3* pDatabase) {
-        this->db = pDatabase;
-    }
-
-
 protected:
     void paintEvent(QPaintEvent* e) override;
 
 private:
     Ui::DesktopOrganizerClass ui;
-    sqlite3* db = nullptr;//数据库
 };

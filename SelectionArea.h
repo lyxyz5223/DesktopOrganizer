@@ -1,7 +1,7 @@
 #ifndef SELECTIONAREA_H
 #define SELECTIONAREA_H
 #include <qwidget.h>
-class SelectionArea : public QWidget{
+class SelectionArea : public QWidget {
 	Q_OBJECT
 private:
 	const QColor defaultBgColor = QColor(10, 123, 212, 100);

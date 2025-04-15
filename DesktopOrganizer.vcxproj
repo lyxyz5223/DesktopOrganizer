@@ -99,6 +99,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ConfigManager.cpp" />
     <ClCompile Include="FileChangesChecker.cpp" />
     <ClCompile Include="fileProc.cpp" />
     <ClCompile Include="DragArea.cpp" />
@@ -118,11 +119,17 @@
     <QtUic Include="DesktopOrganizer.ui" />
     <QtMoc Include="DesktopOrganizer.h" />
     <ClCompile Include="DesktopOrganizer.cpp" />
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="main.cpp">
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename).moc</QtMocFileName>
+      <DynamicSource Condition="'$(Configuration)|$(Platform)'=='Release|x64'">input</DynamicSource>
+      <QtMocFileName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(Filename).moc</QtMocFileName>
+    </ClCompile>
     <None Include="DesktopOrganizer.ico" />
     <ResourceCompile Include="DesktopOrganizer.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ConfigManager.h" />
     <ClInclude Include="FileChangesChecker.h" />
     <ClInclude Include="fileProc.h" />
     <ClInclude Include="DragArea.h" />
