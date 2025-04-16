@@ -55,10 +55,9 @@ int main(int argc, char *argv[])
     //    return code;
     //}
     DesktopOrganizer w;
-    w.setSQLite3Database(pDataBase);
     w.show();
     int returnCode = a.exec();
-    sqlite3_close(pDataBase);//关闭数据库
+    //sqlite3_close(pDataBase);//关闭数据库
     return returnCode;
 }
 

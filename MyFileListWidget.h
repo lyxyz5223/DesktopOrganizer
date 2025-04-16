@@ -106,7 +106,7 @@ private:// 属性定义区
 	std::mutex mtxChildrenWindowsMap;//id-子窗口映射表的互斥锁
 
 	//配置相关
-	ConfigMode configMode = ConfigMode::File;
+	ConfigMode configMode = ConfigMode::Database;
 	//ConfigMode == File
 	std::wstring configName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
 	std::wstring windowsConfigName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
@@ -323,7 +323,36 @@ public:
 	bool writeWindowsConfig(std::wstring nameWithPath);
 	bool readConfig(std::wstring nameWithPath, bool whetherToCreateItem = false);
 	bool writeConfig(std::wstring nameWithPath);
-	std::tuple<sqlite3*, sqlite3_stmt*> prepareDatabase(std::string prepareText);//返回值禁止在多线程中使用
+	enum DatabaseOperation {
+		Read,
+		Write
+	};
+	enum SQLite3DataType {
+		INTEGER,
+		BIGINT,
+		TEXT
+	};
+	std::string SQLite3DataTypeToString(SQLite3DataType type) {
+#define TRANSITIONCASE(type) case SQLite3DataType::type: return #type;
+		switch (type) {
+			TRANSITIONCASE(INTEGER)
+			TRANSITIONCASE(BIGINT)
+			case SQLite3DataType::TEXT: return "TEXT";
+		default: return "";
+		}
+	}
+	struct DatabaseColumn {
+		std::string name;
+		SQLite3DataType type;
+	};
+	struct DatabasePreparation {
+		//std::wstring databaseName;
+		std::wstring tableName;
+		std::vector<DatabaseColumn> columns;
+		std::vector<unsigned long long> primaryKeyIndex;
+	};
+
+	std::tuple<sqlite3*, sqlite3_stmt*> prepareDatabase(DatabasePreparation dbp, DatabaseOperation operation);//返回值禁止在多线程中使用
 	//监视文件夹变动
 	void checkFilesChange(std::wstring path, bool isSingleShot = true);
 	//void checkFilesChangeSingleShotProc(std::wstring path);
