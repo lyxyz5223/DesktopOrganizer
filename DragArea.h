@@ -45,7 +45,7 @@ public:
 		}
 	};
 
-	static struct CustomData {
+	struct CustomData {
 		ShadowItemInformation item;
 		QPoint offset;
 		void* source;

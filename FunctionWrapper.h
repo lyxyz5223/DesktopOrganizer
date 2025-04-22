@@ -1,3 +1,7 @@
+
+#ifndef FUNCTIONWRAPPER_H
+#define FUNCTIONWRAPPER_H
+
 #include <any>
 #include <vector>
 #include <tuple>
@@ -177,7 +181,17 @@ public:
     std::vector<std::type_index> arg_types() const {
         return ptr_ ? ptr_->arg_types() : std::vector<std::type_index>{};
     }
+
+    bool isNull() const {
+        return ptr_.get();
+    }
+    //重载bool操作符
+    operator bool() const {
+        return isNull();
+    }
 };
+
+#endif // !FUNCTIONWRAPPER_H
 
 // 测试用例
 //struct Calculator {

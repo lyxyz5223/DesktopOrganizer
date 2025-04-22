@@ -15,6 +15,10 @@
 #include "FileChangesChecker.h"
 #include "FunctionWrapper.h"
 
+
+//数据库配置管理器
+#include "ConfigManager.h"
+
 class MyAbstractFileListWidget : public QWidget{
 public:
 
@@ -32,9 +36,10 @@ public:
 	static long long getCount() {
 		return useCount;
 	}
-	enum ConfigMode {
+	enum class ConfigMode {
 		File,
-		Database
+		Database,
+		DatabaseConfigManager
 	};
 	struct WindowInfo {
 		MyFileListWidget* window = nullptr;
@@ -106,7 +111,7 @@ private:// 属性定义区
 	std::mutex mtxChildrenWindowsMap;//id-子窗口映射表的互斥锁
 
 	//配置相关
-	ConfigMode configMode = ConfigMode::Database;
+	ConfigMode configMode = ConfigMode::DatabaseConfigManager;
 	//ConfigMode == File
 	std::wstring configName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
 	std::wstring windowsConfigName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
@@ -115,6 +120,34 @@ private:// 属性定义区
 	//ConfigMode == Database
 	//sqlite3* database = nullptr;//数据库，注释掉：不要多线程同时使用一个db
 	std::string databaseFileName = "config.db";
+	DatabaseConfigManager::TableStruct windowsConfigTableStruct = {
+		{//columns
+			{ "id", DatabaseConfigManager::SQLite3DataType::BIGINT },
+			{ "title", DatabaseConfigManager::SQLite3DataType::TEXT },
+			{ "x", DatabaseConfigManager::SQLite3DataType::INTEGER },
+			{ "y", DatabaseConfigManager::SQLite3DataType::INTEGER },
+			{ "width", DatabaseConfigManager::SQLite3DataType::INTEGER },
+			{ "height", DatabaseConfigManager::SQLite3DataType::INTEGER }
+		},
+		//primary keys index
+		{ 0 },
+		//dropRowId
+		true
+	};
+	DatabaseConfigManager::TableStruct configTableStruct = {
+		{//columns
+			{ "windowId", DatabaseConfigManager::SQLite3DataType::BIGINT },
+			{ "name", DatabaseConfigManager::SQLite3DataType::TEXT },
+			{ "path", DatabaseConfigManager::SQLite3DataType::TEXT },
+			{ "position", DatabaseConfigManager::SQLite3DataType::BIGINT }
+		},
+		//primary keys index
+		{ 1,2 },
+		//dropRowId
+		true
+	};
+
+
 
 	//QFont itemFont;
 	Spacing itemSpacing = { 10, 10 };

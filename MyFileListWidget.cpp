@@ -26,6 +26,7 @@
 #include "MyMenuAction.h"
 #include "MyMenu.h"
 #include <QSettings>
+#include <QGraphicsDropShadowEffect>
 #include <qregularexpression.h>
 
 //C++
@@ -47,7 +48,8 @@
 #include "fileProc.h"
 #include <QFileInfo>
 #include "FileChangesChecker.h"
-#include <QGraphicsDropShadowEffect>
+#include "ConfigManager.h"
+
 //声明&定义
 //注册表
 //根目录
@@ -2035,261 +2037,358 @@ std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, st
 	return result;
 }
 
+
 bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 {
-	std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
-	using namespace std;
-	switch (configMode)
-	{
-	case MyFileListWidget::File:
-	{
-		/*
-		id: 窗口id
-		title: 窗口名字
-		cx: x坐标
-		cy: y坐标
-		width: 窗口宽度
-		height: 窗口高度
-		*/
-		fstream fConfig(nameWithPath, ios::app | ios::out);
-		if (!fConfig.is_open())
-			return false;//打开失败
-		fConfig.close();
-		fConfig.open(nameWithPath, ios::in);
-		if (fConfig.is_open())
+	bool result = true;
+	std::thread([&]() {
+		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
+		using namespace std;
+		switch (configMode)
 		{
-	#ifdef _DEBUG
-			cout << UTF8ToANSI("Windows配置文件：") << endl;
-	#endif // !_DEBUG
-			//判断文件是否为空，成立为空
-			if (fConfig.peek() != ifstream::traits_type::eof())
+		case ConfigMode::File:
+		{
+			/*
+			id: 窗口id
+			title: 窗口名字
+			cx: x坐标
+			cy: y坐标
+			width: 窗口宽度
+			height: 窗口高度
+			*/
+			fstream fConfig(nameWithPath, ios::app | ios::out);
+			if (!fConfig.is_open())
+				return (result = false);//打开失败
+			fConfig.close();
+			fConfig.open(nameWithPath, ios::in);
+			if (fConfig.is_open())
 			{
-				size_t lineCount = 0;
-				wstring wstrLine;
-				string strLine;
-				while (getline(fConfig, strLine))
-				{
-					++lineCount;
 #ifdef _DEBUG
-					cout << strLine << endl;
+				cout << UTF8ToANSI("Windows配置文件：") << endl;
 #endif // !_DEBUG
-					std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-					wstrLine = converter.from_bytes(strLine);
-					vector<wstring> conf = split(wstrLine);
-					try {
-						if (conf.size() >= 5)
-						{
-							wstring cx = *(conf.end() - 4),
-								cy = *(conf.end() - 3),
-								width = *(conf.end() - 2),
-								height = *(conf.end() - 1);
-							bool bCx = isDigits(cx);
-							bool bCy = isDigits(cy);
-							bool bWidth = isDigits(width);
-							bool bHeight = isDigits(height);
-							string errMsg = "error:";
-							if (!bCx)
-								errMsg += " cx,";
-							if (!bCy)
-								errMsg += " cy,";
-							if (!bWidth)
-								errMsg += " width,";
-							if (!bHeight)
-								errMsg += " height,";
-							if (errMsg.back() == ',')
-								errMsg.pop_back();
-							if (errMsg != "error:")
+				//判断文件是否为空，成立为空
+				if (fConfig.peek() != ifstream::traits_type::eof())
+				{
+					size_t lineCount = 0;
+					wstring wstrLine;
+					string strLine;
+					while (getline(fConfig, strLine))
+					{
+						++lineCount;
+#ifdef _DEBUG
+						cout << strLine << endl;
+#endif // !_DEBUG
+						std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+						wstrLine = converter.from_bytes(strLine);
+						vector<wstring> conf = split(wstrLine);
+						try {
+							if (conf.size() >= 5)
 							{
-								errMsg += " should be number!";
-								throw errMsg;
-							}
-
-							wstring windowTitle;
-							if (conf.size() >= 6)
-							{
-								for (auto iter = conf.begin() + 2; iter != conf.end() - 4;)
+								wstring cx = *(conf.end() - 4),
+									cy = *(conf.end() - 3),
+									width = *(conf.end() - 2),
+									height = *(conf.end() - 1);
+								bool bCx = isDigits(cx);
+								bool bCy = isDigits(cy);
+								bool bWidth = isDigits(width);
+								bool bHeight = isDigits(height);
+								string errMsg = "error:";
+								if (!bCx)
+									errMsg += " cx,";
+								if (!bCy)
+									errMsg += " cy,";
+								if (!bWidth)
+									errMsg += " width,";
+								if (!bHeight)
+									errMsg += " height,";
+								if (errMsg.back() == ',')
+									errMsg.pop_back();
+								if (errMsg != "error:")
 								{
-									conf[1] += L" " + (*iter);
-									iter = conf.erase(iter);
+									errMsg += " should be number!";
+									throw errMsg;
 								}
-								windowTitle = conf[1];
-							}
-							if (!childrenWindowsMap.count(stoll(conf[0])))
-								childrenWindowsMap[stoll(conf[0])] = {
-									nullptr, windowTitle,
-									QRect(stoi(cx), stoi(cy), stoi(width), stoi(height))
+
+								wstring windowTitle;
+								if (conf.size() >= 6)
+								{
+									for (auto iter = conf.begin() + 2; iter != conf.end() - 4;)
+									{
+										conf[1] += L" " + (*iter);
+										iter = conf.erase(iter);
+									}
+									windowTitle = conf[1];
+								}
+								if (!childrenWindowsMap.count(stoll(conf[0])))
+									childrenWindowsMap[stoll(conf[0])] = {
+										nullptr, windowTitle,
+										QRect(stoi(cx), stoi(cy), stoi(width), stoi(height))
 								};
-							else
-							{
-								auto& windowProp = childrenWindowsMap[stoll(conf[0])];
-								windowProp.title = windowTitle;
-								windowProp.rect = QRect(stoi(cx), stoi(cy), stoi(width), stoi(height));
+								else
+								{
+									auto& windowProp = childrenWindowsMap[stoll(conf[0])];
+									windowProp.title = windowTitle;
+									windowProp.rect = QRect(stoi(cx), stoi(cy), stoi(width), stoi(height));
+								}
 							}
 						}
+						catch (string errMsg) {
+							cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
+							cout << UTF8ToANSI(errMsg) << endl;
+							continue;
+						}
 					}
-					catch(string errMsg) {
-						cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
-						cout << UTF8ToANSI(errMsg) << endl;
-						continue;
-					}
+					//关闭文件
+					fConfig.close();
 				}
-				//关闭文件
-				fConfig.close();
 			}
+			return (result = true);
 		}
-		return true;
-	}
-	break;
-	case MyFileListWidget::Database:
-	{
-		//TODO: 数据库读取
-		// 然后再执行 SELECT 查询
-		// 预处理
-		vector<DatabaseColumn> tableStruct = {
-			{ "id", BIGINT },
-			{ "title", TEXT },
-			{ "x", INTEGER },
-			{ "y", INTEGER },
-			{ "width", INTEGER },
-			{ "height", INTEGER }
-		};
-		vector<unsigned long long> primaryKeyIndex(1, 0);//这里分配一个unsigned long long，值为0
-		sqlite3* db = nullptr;
-		sqlite3_stmt* stmt;
-		DatabasePreparation dbp = {
-			windowsConfigName,
-			tableStruct,
-			primaryKeyIndex
-		};
-		std::tie(db, stmt) = prepareDatabase(dbp, Read);
-		//开始遍历查询
-		int returnCode = SQLITE_OK;
-		while ((returnCode = sqlite3_step(stmt)) == SQLITE_ROW)
-		{
-			long long id = sqlite3_column_int64(stmt, 0);
-			const unsigned char* title = sqlite3_column_text(stmt, 1);
-			std::string titleStr = title ? reinterpret_cast<const char*>(title) : "";
-			std::wstring titleWStr = str2wstr_2UTF8(titleStr);
-			int x = sqlite3_column_int(stmt, 2);
-			int y = sqlite3_column_int(stmt, 3);
-			int width = sqlite3_column_int(stmt, 4);
-			int height = sqlite3_column_int(stmt, 5);
-			std::cout << id << " " << title << " " << x << " " << y
-				<< " " << width << " " << height << std::endl;
-			if (!childrenWindowsMap.count(id))
-			{
-				childrenWindowsMap[id] = {
-					nullptr, titleWStr,
-					QRect(x, y, width, height)
-				};
-			}
-			else
-			{
-				auto& windowProp = childrenWindowsMap[id];
-				windowProp.title = titleWStr;
-				windowProp.rect = QRect(x, y, width, height);
-			}
-		}
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-	}
-	break;
-	default:
 		break;
-	}
-	return true;
+		case ConfigMode::Database:
+		{
+			//TODO: 数据库读取
+			// 然后再执行 SELECT 查询
+			// 预处理
+			vector<DatabaseColumn> tableStruct = {
+				{ "id", BIGINT },
+				{ "title", TEXT },
+				{ "x", INTEGER },
+				{ "y", INTEGER },
+				{ "width", INTEGER },
+				{ "height", INTEGER }
+			};
+			vector<unsigned long long> primaryKeyIndex(1, 0);//这里分配一个unsigned long long，值为0
+			sqlite3* db = nullptr;
+			sqlite3_stmt* stmt;
+			DatabasePreparation dbp = {
+				windowsConfigName,
+				tableStruct,
+				primaryKeyIndex
+			};
+			std::tie(db, stmt) = prepareDatabase(dbp, Read);
+			//开始遍历查询
+			int returnCode = SQLITE_OK;
+			while ((returnCode = sqlite3_step(stmt)) == SQLITE_ROW)
+			{
+				long long id = sqlite3_column_int64(stmt, 0);
+				const unsigned char* title = sqlite3_column_text(stmt, 1);
+				std::string titleStr = title ? reinterpret_cast<const char*>(title) : "";
+				std::wstring titleWStr = str2wstr_2UTF8(titleStr);
+				int x = sqlite3_column_int(stmt, 2);
+				int y = sqlite3_column_int(stmt, 3);
+				int width = sqlite3_column_int(stmt, 4);
+				int height = sqlite3_column_int(stmt, 5);
+				std::cout << id << " " << title << " " << x << " " << y
+					<< " " << width << " " << height << std::endl;
+				if (!childrenWindowsMap.count(id))
+				{
+					childrenWindowsMap[id] = {
+						nullptr, titleWStr,
+						QRect(x, y, width, height)
+					};
+				}
+				else
+				{
+					auto& windowProp = childrenWindowsMap[id];
+					windowProp.title = titleWStr;
+					windowProp.rect = QRect(x, y, width, height);
+				}
+			}
+			sqlite3_finalize(stmt);
+			sqlite3_close(db);
+			return (result = true);
+		}
+		break;
+		case ConfigMode::DatabaseConfigManager:
+		{
+			DatabaseConfigManager configManager(databaseFileName);
+			//不覆盖创建
+			configManager.createTable(windowsConfigName, windowsConfigTableStruct);
+			//设置默认读取的表名和结构
+			configManager.setTableNameAndStruct(windowsConfigName, windowsConfigTableStruct);
+			configManager.setCallbackWhileReading(
+				[&](std::vector<std::any> lineData, void* userData) {
+					long long id = any_cast<long long>(lineData[0]);
+					std::string titleStr = any_cast<string>(lineData[1]);
+					std::wstring titleWStr = str2wstr_2UTF8(titleStr);
+					int x = any_cast<int>(lineData[2]);
+					int y = any_cast<int>(lineData[3]);
+					int width = any_cast<int>(lineData[4]);
+					int height = any_cast<int>(lineData[5]);
+					std::cout << id << " " << UTF8ToANSI(titleStr) << " " << x << " " << y
+						<< " " << width << " " << height << std::endl;
+					if (!childrenWindowsMap.count(id))
+					{
+						childrenWindowsMap[id] = {
+							nullptr, titleWStr,
+							QRect(x, y, width, height)
+						};
+					}
+					else
+					{
+						auto& windowProp = childrenWindowsMap[id];
+						windowProp.title = titleWStr;
+						windowProp.rect = QRect(x, y, width, height);
+					}
+				},
+				nullptr/*user data*/);
+			configManager.read();
+			configManager.close();
+		}
+		break;
+		default:
+			break;
+		}
+		return (result = true);
+	}).join();
+	return result;
 }
 
 bool MyFileListWidget::writeWindowsConfig(std::wstring nameWithPath)
 {
-	std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
-	using namespace std;
-	switch (configMode)
-	{
-	case MyFileListWidget::File:
-	{
-
-		string delimiter = " ";
-		ofstream outConfig;
-		outConfig.open(nameWithPath, ios::out);
-		if (!outConfig.is_open())
-			return false;
-		else
+	bool result = true;
+	std::thread([&]() {
+		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
+		//class UnCheckedLock {
+		//private:
+		//	std::mutex& mutex;
+		//public:
+		//	~UnCheckedLock() {
+		//		mutex.unlock();
+		//	}
+		//	UnCheckedLock(std::mutex& mutex) : mutex(mutex) {
+		//		mutex.lock();
+		//	}
+		//	UnCheckedLock(std::mutex& mutex, bool hasLock) : mutex(mutex) {
+		//		if (!hasLock)
+		//			mutex.lock();
+		//	}
+		//} lock(mtxWindowsConfigFile);
+		using namespace std;
+		switch (configMode)
 		{
+		case ConfigMode::File:
+		{
+			string delimiter = " ";
+			ofstream outConfig;
+			outConfig.open(nameWithPath, ios::out);
+			if (!outConfig.is_open())
+				return (result = false);
+			else
+			{
+				string(*encodeType)(wstring) = wstr2str_2UTF8;
+				for (auto i = childrenWindowsMap.begin(); i != childrenWindowsMap.end(); i++)
+				{
+					outConfig << i->first;
+					outConfig << delimiter;
+					outConfig << encodeType(i->second.title) << delimiter
+						<< to_string(i->second.rect.x()) << delimiter
+						<< to_string(i->second.rect.y()) << delimiter
+						<< to_string(i->second.rect.width()) << delimiter
+						<< to_string(i->second.rect.height())
+						<< endl;
+					outConfig.flush();
+				}
+				outConfig.close();
+			}
+		}
+		break;
+		case ConfigMode::Database:
+		{
+			//TODO: 数据库写入
+			vector<DatabaseColumn> tableStruct = {
+				{ "id", BIGINT },
+				{ "title", TEXT },
+				{ "x", INTEGER },
+				{ "y", INTEGER },
+				{ "width", INTEGER },
+				{ "height", INTEGER }
+			};
+			vector<unsigned long long> primaryKeyIndex(1, 0);//这里分配一个unsigned long long，值为0
+			DatabasePreparation dbp = {
+				windowsConfigName,
+				tableStruct,
+				primaryKeyIndex
+			};
+			sqlite3* db = nullptr;
+			sqlite3_stmt* stmt;
+			std::tie(db, stmt) = prepareDatabase(dbp, Write);
+			int code = sqlite3_exec(db, "BEGIN TRANSACTION", 0, 0, 0);
+			//保存数据
 			string(*encodeType)(wstring) = wstr2str_2UTF8;
 			for (auto i = childrenWindowsMap.begin(); i != childrenWindowsMap.end(); i++)
 			{
-				outConfig << i->first;
-				outConfig << delimiter;
-				outConfig << encodeType(i->second.title) << delimiter
-					<< to_string(i->second.rect.x()) << delimiter
-					<< to_string(i->second.rect.y()) << delimiter
-					<< to_string(i->second.rect.width()) << delimiter
-					<< to_string(i->second.rect.height())
-					<< endl;
-				outConfig.flush();
+				long long id = i->first;
+				wstring titleWStr = i->second.title;
+				string title = encodeType(titleWStr);
+				QRect rect = i->second.rect;
+				sqlite3_bind_int64(stmt, 1, id);
+				sqlite3_bind_text(stmt, 2, title.c_str(), -1, SQLITE_STATIC);
+				sqlite3_bind_int(stmt, 3, rect.x());
+				sqlite3_bind_int(stmt, 4, rect.y());
+				sqlite3_bind_int(stmt, 5, rect.width());
+				sqlite3_bind_int(stmt, 6, rect.height());
+				int returnCode = sqlite3_step(stmt);
+				sqlite3_reset(stmt);
+				if (returnCode != SQLITE_DONE) {
+					std::cerr << UTF8ToANSI("执行插入失败: ") << sqlite3_errmsg(db) << std::endl;
+					MessageBox(0, L"Database save error.\n保存数据库失败，软件运行可能不正常", L"error", MB_ICONERROR);
+					result = false;
+				}
 			}
-			outConfig.close();
+			sqlite3_finalize(stmt);
+			sqlite3_exec(db, "COMMIT", 0, 0, 0);
+			sqlite3_close(db);
 		}
-		return true;
-	}
-	break;
-	case MyFileListWidget::Database:
-	{
-		//TODO: 数据库写入
-		vector<DatabaseColumn> tableStruct = {
-			{ "id", BIGINT },
-			{ "title", TEXT },
-			{ "x", INTEGER },
-			{ "y", INTEGER },
-			{ "width", INTEGER },
-			{ "height", INTEGER }
-		};
-		vector<unsigned long long> primaryKeyIndex(1, 0);//这里分配一个unsigned long long，值为0
-		DatabasePreparation dbp = {
-			windowsConfigName,
-			tableStruct,
-			primaryKeyIndex
-		};
-		sqlite3* db = nullptr;
-		sqlite3_stmt* stmt;
-		std::tie(db, stmt) = prepareDatabase(dbp, Write);
-		//保存数据
-		string(*encodeType)(wstring) = wstr2str_2UTF8;
-		for (auto i = childrenWindowsMap.begin(); i != childrenWindowsMap.end(); i++)
-		{
-			long long id = i->first;
-			wstring titleWStr = i->second.title;
-			string title = encodeType(titleWStr);
-			QRect rect = i->second.rect;
-			sqlite3_bind_int64(stmt, 1, id);
-			sqlite3_bind_text(stmt, 2, title.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_int(stmt, 3, rect.x());
-			sqlite3_bind_int(stmt, 4, rect.y());
-			sqlite3_bind_int(stmt, 5, rect.width());
-			sqlite3_bind_int(stmt, 6, rect.height());
-			int returnCode = sqlite3_step(stmt);
-			sqlite3_reset(stmt);
-			if (returnCode != SQLITE_DONE) {
-				std::cerr << UTF8ToANSI("执行插入失败: ") << sqlite3_errmsg(db) << std::endl;
-				MessageBox(0, L"Database save error.\n保存数据库失败，软件运行可能不正常", L"error", MB_ICONERROR);
-			}
-		}
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-	}
-	break;
-	default:
 		break;
-	}
-	return true;
+		case ConfigMode::DatabaseConfigManager:
+		{
+			DatabaseConfigManager configManager(databaseFileName);
+			configManager.createTable(windowsConfigName, windowsConfigTableStruct, false, true);
+			try {
+				configManager.transactionBegin();
+				for (auto i : childrenWindowsMap)
+				{
+					long long wid = i.first;
+					vector<any> data = {
+						i.first,//window id
+						i.second.title,
+						i.second.rect.x(),
+						i.second.rect.y(),
+						i.second.rect.width(),
+						i.second.rect.height()
+					};
+					configManager.insertOrReplaceLines(data);
+				}
+				configManager.transactionCommit();
+			}
+			catch (std::runtime_error re) {
+				MessageBox(0, str2wstr_2UTF8(re.what()).c_str(), L"error", MB_ICONERROR);
+				try {
+					configManager.transactionRollback();
+				}
+				catch (std::runtime_error re1) {
+					//MessageBox(0, str2wstr_2UTF8(re1.what()).c_str(), L"error", MB_ICONERROR);
+				}
+				return (result = false);
+			}
+			configManager.close();
+		}
+		break;
+		default:
+			break;
+		}
+		return (result = true);
+	}).join();
+	return result;
 }
 
 bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreateItem)
 {
 	switch (configMode)
 	{
-	case MyFileListWidget::File:
+	case ConfigMode::File:
 	{
 		using namespace std;
 		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
@@ -2366,7 +2465,7 @@ bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreat
 		return true;
 	}
 		break;
-	case MyFileListWidget::Database:
+	case ConfigMode::Database:
 	{
 		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
 
@@ -2432,6 +2531,54 @@ bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreat
 		sqlite3_close(db);
 	}
 		break;
+	case ConfigMode::DatabaseConfigManager:
+	{
+		using namespace std;
+		DatabaseConfigManager configManager(databaseFileName);
+		//不覆盖创建
+		configManager.createTable(configName, configTableStruct);
+		//设置默认读取的表名和结构
+		configManager.setTableNameAndStruct(configName, configTableStruct);
+		configManager.setCallbackWhileReading(
+			[&](std::vector<std::any> lineData, void* userData) {
+				long long wid = any_cast<long long>(lineData[0]);
+				std::string nameStr = any_cast<string>(lineData[1]);
+				std::wstring nameWStr = str2wstr_2UTF8(nameStr);
+				std::string pathStr = any_cast<string>(lineData[2]);
+				std::wstring pathWStr = str2wstr_2UTF8(pathStr);
+				long long position = any_cast<long long>(lineData[3]);
+				std::cout << wid << " " << UTF8ToANSI(nameStr) << " " << UTF8ToANSI(pathStr) << " " << position << std::endl;
+
+				mtxItemsMap.lock();
+				itemsMap[pathWStr + nameWStr] = {
+					wid, 0, nameWStr, pathWStr, position
+				};
+				if (wid == this->windowId)
+					positionNameWithPathMap[position] = pathWStr + nameWStr;
+				mtxItemsMap.unlock();
+				if (whetherToCreateItem)
+				{
+					WindowInfo thisWindowInfo{ this, windowTitle().toStdWString(), geometry() };
+					auto& windowProp = (wid == windowId) ? thisWindowInfo : childrenWindowsMap[wid];
+					if (!windowProp.window)
+					{
+						QRect newWindowRect(
+							QPoint((width() - width() / 3) / 2,
+								(height() - height() / 3) / 2),
+							size() / 3
+						);
+						//TODO: 子窗口创建
+						windowProp.window = 0;
+					}
+					if (windowProp.window)
+						windowProp.window->createItem(nameWStr, pathWStr);
+				}
+			}, nullptr
+		);
+		configManager.read();
+		configManager.close();
+	}
+	break;
 	default:
 		break;
 	}
@@ -2440,83 +2587,122 @@ bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreat
 
 bool MyFileListWidget::writeConfig(std::wstring nameWithPath)
 {
-	std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
-	using namespace std;
-	switch (configMode)
-	{
-	case MyFileListWidget::File:
-	{
-		string delimiter = " ";
-		ofstream outConfig;
-		outConfig.open(nameWithPath);
-		if (!outConfig.is_open())
-			return false;
-		else
+	bool result = true;
+	std::thread([&]() {
+		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
+		using namespace std;
+		switch (configMode)
 		{
+		case ConfigMode::File:
+		{
+			string delimiter = " ";
+			ofstream outConfig;
+			outConfig.open(nameWithPath);
+			if (!outConfig.is_open())
+				return (result = false);
+			else
+			{
+				string(*encodeType)(wstring) = wstr2str_2UTF8;
+				std::lock_guard<std::mutex> lock(mtxItemsMap);
+				for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
+				{
+					outConfig << "\"" << encodeType(i->second.name);
+					outConfig << "\"" << delimiter;
+					outConfig << "\"" << encodeType(i->second.path);
+					outConfig << "\"" << delimiter
+						<< i->second.position << delimiter
+						<< i->second.windowId << endl;
+					outConfig.flush();
+				}
+				outConfig.close();
+			}
+			return (result = true);
+		}
+		break;
+		case ConfigMode::Database:
+		{
+			//TODO: 数据库写入
+			vector<DatabaseColumn> tableStruct = {
+				{ "windowId", BIGINT },
+				{ "name", TEXT },
+				{ "path", TEXT },
+				{ "position", BIGINT }
+			};
+			vector<unsigned long long> primaryKeyIndex{ 1,2 };//这里表示name和path的复合主键
+			sqlite3* db = nullptr;
+			sqlite3_stmt* stmt;
+			DatabasePreparation dbp = {
+				configName,
+				tableStruct,
+				primaryKeyIndex
+			};
+			std::tie(db, stmt) = prepareDatabase(dbp, Write);
+			int code = sqlite3_exec(db, "BEGIN TRANSACTION", 0, 0, 0);
+			//保存数据
 			string(*encodeType)(wstring) = wstr2str_2UTF8;
-			std::lock_guard<std::mutex> lock(mtxItemsMap);
 			for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
 			{
-				outConfig << "\"" << encodeType(i->second.name);
-				outConfig << "\"" << delimiter;
-				outConfig << "\"" << encodeType(i->second.path);
-				outConfig << "\"" << delimiter
-					<< i->second.position << delimiter
-					<< i->second.windowId << endl;
-				outConfig.flush();
+				long long wid = i->second.windowId;
+				wstring nameWStr = i->second.name;
+				wstring pathWStr = i->second.path;
+				string nameStr = encodeType(nameWStr);
+				string pathStr = encodeType(pathWStr);
+				long long position = i->second.position;
+				sqlite3_bind_int64(stmt, 1, wid);
+				sqlite3_bind_text(stmt, 2, nameStr.c_str(), -1, SQLITE_STATIC);
+				sqlite3_bind_text(stmt, 3, pathStr.c_str(), -1, SQLITE_STATIC);
+				sqlite3_bind_int64(stmt, 4, position);
+				int returnCode = sqlite3_step(stmt);
+				sqlite3_reset(stmt);
+				if (returnCode != SQLITE_DONE) {
+					std::cerr << UTF8ToANSI("执行插入失败: ") << sqlite3_errmsg(db) << std::endl;
+					MessageBox(0, L"Database save error.\n保存数据库失败，软件运行可能不正常", L"error", MB_ICONERROR);
+					result = false;
+				}
 			}
-			outConfig.close();
+			sqlite3_finalize(stmt);
+			code = sqlite3_exec(db, "COMMIT", 0, 0, 0);
+			sqlite3_close(db);
 		}
-		return true;
-	}
 		break;
-	case MyFileListWidget::Database:
-	{
-		//TODO: 数据库写入
-		vector<DatabaseColumn> tableStruct = {
-			{ "windowId", BIGINT },
-			{ "name", TEXT },
-			{ "path", TEXT },
-			{ "position", BIGINT }
-		};
-		vector<unsigned long long> primaryKeyIndex{ 1,2 };//这里表示name和path的复合主键
-		sqlite3* db = nullptr;
-		sqlite3_stmt* stmt;
-		DatabasePreparation dbp = {
-			configName,
-			tableStruct,
-			primaryKeyIndex
-		};
-		std::tie(db, stmt) = prepareDatabase(dbp, Write);
-		//保存数据
-		string(*encodeType)(wstring) = wstr2str_2UTF8;
-		for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
+		case ConfigMode::DatabaseConfigManager:
 		{
-			long long wid = i->second.windowId;
-			wstring nameWStr = i->second.name;
-			wstring pathWStr = i->second.path;
-			string nameStr = encodeType(nameWStr);
-			string pathStr = encodeType(pathWStr);
-			long long position = i->second.position;
-			sqlite3_bind_int64(stmt, 1, wid);
-			sqlite3_bind_text(stmt, 2, nameStr.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_text(stmt, 3, pathStr.c_str(), -1, SQLITE_STATIC);
-			sqlite3_bind_int64(stmt, 4, position);
-			int returnCode = sqlite3_step(stmt);
-			sqlite3_reset(stmt);
-			if (returnCode != SQLITE_DONE) {
-				std::cerr << UTF8ToANSI("执行插入失败: ") << sqlite3_errmsg(db) << std::endl;
-				MessageBox(0, L"Database save error.\n保存数据库失败，软件运行可能不正常", L"error", MB_ICONERROR);
+			DatabaseConfigManager configManager(databaseFileName);
+			//清除/覆盖原数据写入
+			configManager.createTable(configName, configTableStruct, true, true);
+			try {
+				configManager.transactionBegin();
+				for (auto i : itemsMap)
+				{
+					vector<any> data = {
+						i.second.windowId,//window id
+						i.second.name,
+						i.second.path,
+						i.second.position
+					};
+					configManager.insertOrReplaceLines(data);
+				}
+				configManager.transactionCommit();
 			}
+			catch (std::runtime_error re) {
+				MessageBox(0, str2wstr_2UTF8(re.what()).c_str(), L"error", MB_ICONERROR);
+				try {
+					configManager.transactionRollback();
+				}
+				catch (std::runtime_error re1) {
+					//MessageBox(0, str2wstr_2UTF8(re1.what()).c_str(), L"error", MB_ICONERROR);
+				}
+				return (result = false);
+			}
+			configManager.close();
 		}
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-	}
 		break;
-	default:
-		break;
-	}
-	return true;
+		default:
+			break;
+		}
+		return (result = true);
+	}).join();
+	return result;
 }
 
 std::tuple<sqlite3*, sqlite3_stmt*> MyFileListWidget::prepareDatabase(DatabasePreparation dbp, DatabaseOperation operation)
@@ -2605,7 +2791,7 @@ std::tuple<sqlite3*, sqlite3_stmt*> MyFileListWidget::prepareDatabase(DatabasePr
 	}
 	sqlite3_stmt* stmt;
 	code = sqlite3_prepare_v2(db, prepareText.c_str(), -1, &stmt, nullptr);//编译SQL语句为字节码
-	if (rc != SQLITE_OK)
+	if (code != SQLITE_OK)
 	{
 		std::cerr << UTF8ToANSI("准备语句失败: ") << sqlite3_errmsg(db) << std::endl;
 		sqlite3_close(db);
