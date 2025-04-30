@@ -14,6 +14,7 @@
 
 //Windows
 #include <Windows.h>
+#include <qvalidator.h>
 
 QString elidedMultiLinesText(QWidget* widget, QString text, int lines, Qt::TextElideMode ElideMode);
 void MyFileListItem::initialize(QWidget* parent, QSize defaultSize)
@@ -43,6 +44,28 @@ void MyFileListItem::initialize(QWidget* parent, QSize defaultSize)
 	connect(this, &MyFileListItem::moveSignal, this, [&](QPoint pos) { move(pos); });
 	connect(this, &MyFileListItem::resizeSignal, this, [&](QSize size) { resize(size); });
 	connect(this, &MyFileListItem::adjustSizeSignal, this, &MyFileListItem::adjustSize);
+
+	//文本编辑框的延迟启动
+	edit->hide();
+	QRegularExpressionValidator* validator = new QRegularExpressionValidator(QRegularExpression("[^\\\\/:*?\"<>|]*"));
+	edit->setValidator(validator);
+	connect(editDisplayDelayTimer, &QTimer::timeout, this, [this]() {
+		showLineEdit();
+	});
+	//connect(edit, &QLineEdit::editingFinished, this, [this]() {
+	//	edit->hide();
+	//	if (edit->text() != text())
+	//	{
+	//		QString textSet = edit->text();
+	//		QString Qtext = text();
+	//		if (Qtext.right(4) == ".lnk" || Qtext.right(4) == ".url") // 这两种后缀名的文件直接省略后缀
+	//			textSet += Qtext.right(4);
+	//		setText(textSet);
+	//		adjustSize();
+	//		update();
+	//	}
+	//});
+	edit->installEventFilter(this);
 }
 MyFileListItem::MyFileListItem(QWidget* parent, QSize defaultSize)
 	: QPushButton(parent), itemRect(QPoint(0, 0), defaultSize)
@@ -93,7 +116,13 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 		QRect imageRect;//图标具体位置
 		double zoom = iconZoom;//图标的缩放比例
 		QSize itemImageZoneSize = size();//图标绘制专属区域
-		itemImageZoneSize.setHeight(itemImageZoneSize.height() - fontMetrics1.lineSpacing() * 2);
+		//QFontMetrics fm(font());
+		//int ascent = fm.ascent();    // 上缘高度
+		//int descent = fm.descent();  // 下缘深度
+		//int height1 = fm.height();    // ascent + descent + 1（某些系统可能+1）
+		//int leading = fm.leading();  // 行间额外空白
+		//int lineSpacing = fm.lineSpacing(); // height + leading
+		itemImageZoneSize.setHeight(itemImageZoneSize.height() - fontMetrics1.lineSpacing() * 2 - fontMetrics1.descent());
 		if (itemImageZoneSize.width() <= itemImageZoneSize.height())
 		//宽小，用宽度计算图标大小/缩放
 			imageRect.setSize(QSize(itemImageZoneSize.width() * zoom, itemImageZoneSize.width() * zoom));
@@ -117,6 +146,12 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 			setMask(backgroundRect);
 		}
 		p.drawRoundedRect(backgroundRect, xr, yr, Qt::SizeMode::AbsoluteSize);
+		p.save();
+		p.setBrush(Qt::NoBrush);
+		p.setPen(QPen(Qt::DotLine));
+		if (hasFocus())
+			p.drawRoundedRect(backgroundRect, xr, yr, Qt::SizeMode::AbsoluteSize);//绘制焦点边框
+		p.restore();
 		//绘制图标
 		pen.setColor(QColor(0, 0, 0, 100));//边框颜色
 		p.setPen(pen);//边框画笔
@@ -138,7 +173,10 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 	//绘制文本，设置颜色和画笔
 	pen.setColor(QColor(0, 0, 0, 255));
 	p.setPen(pen);
-	p.drawText(textRect, Qtext, qto);
+	if (!hideText)
+		p.drawText(textRect, Qtext, qto);
+	//设置QLineEdit的位置和大小
+	edit->setGeometry(textRect);
 	this->elidedText = Qtext;//保存文本
 	this->textRect = textRect;//保存文本位置
 	this->textFont = font();
@@ -151,58 +189,103 @@ void MyFileListItem::paintEvent(QPaintEvent* e)
 
 bool MyFileListItem::eventFilter(QObject* watched, QEvent* event)
 {
-	bool mousePosInItem = backgroundRect.contains(mapFromGlobal(QCursor::pos()));
-	//if (event->type() == QEvent::MouseMove && mousePosInItem)
-	//	bgBrush = bgBrush_MouseMove;
-	//else if (event->type() == QEvent::MouseMove && !mousePosInItem)
-	//	bgBrush = bgBrush_Default;
-	if (event->type() == QEvent::Enter)
-		bgBrush = bgBrush_MouseMove;
-	else if (event->type() == QEvent::Leave && !isChecked())
-		bgBrush = bgBrush_Default;
-	else if (event->type() == QEvent::Leave && isChecked())
-		bgBrush = bgBrush_Selected;
-	else if (event->type() == QEvent::MouseMove)
+	if (!event)//没必要，此处只是为了消除编译器警告
+		return false;
+	if (watched == this)
 	{
-		if (!mousePosInItem && bgBrush == bgBrush_MouseMove)
-		{
-			if (isChecked())
-				bgBrush = bgBrush_Selected;
-			else
-				bgBrush = bgBrush_Default;
-			update();
-		}
-		else if (mousePosInItem && bgBrush != bgBrush_MouseMove)
-		{
+		bool mousePosInItem = backgroundRect.contains(mapFromGlobal(QCursor::pos()));
+		//if (event->type() == QEvent::MouseMove && mousePosInItem)
+		//	bgBrush = bgBrush_MouseMove;
+		//else if (event->type() == QEvent::MouseMove && !mousePosInItem)
+		//	bgBrush = bgBrush_Default;
+		if (event->type() == QEvent::Enter)
 			bgBrush = bgBrush_MouseMove;
-			update();
+		else if (event->type() == QEvent::Leave && !isChecked())
+			bgBrush = bgBrush_Default;
+		else if (event->type() == QEvent::Leave && isChecked())
+			bgBrush = bgBrush_Selected;
+		else if (event->type() == QEvent::MouseMove)
+		{
+			if (!mousePosInItem && bgBrush == bgBrush_MouseMove)
+			{
+				if (isChecked())
+					bgBrush = bgBrush_Selected;
+				else
+					bgBrush = bgBrush_Default;
+				update();
+			}
+			else if (mousePosInItem && bgBrush != bgBrush_MouseMove)
+			{
+				bgBrush = bgBrush_MouseMove;
+				update();
+			}
+		}
+		//if (event->type() == QEvent::MouseButtonPress)
+		//{
+		//	if (!mousePosInItem || shouldIgnore())
+		//	{
+		//		event->ignore();
+		//		bIgnore = true;
+		//	}
+		//}
+		//else if (event->type() == QEvent::MouseMove)
+		//{
+		//	if (shouldIgnore())
+		//		event->ignore();
+		//}
+		//else if (event->type() == QEvent::MouseButtonRelease)
+		//{
+		//	if (bIgnore)
+		//		event->ignore();
+		//	bIgnore = false;
+		//}
+		//else if (event->type() == QEvent::MouseButtonDblClick)
+		//{
+		//	if (!mousePosInItem)
+		//		event->ignore();
+		//}
+		if (event->type() == QEvent::KeyPress)
+		{
+			QKeyEvent* keyEvent = dynamic_cast<QKeyEvent*>(event);
+			if (keyEvent && keyEvent->key() == Qt::Key_F2)
+			{
+				showLineEdit();
+			}
 		}
 	}
-	//if (event->type() == QEvent::MouseButtonPress)
-	//{
-	//	if (!mousePosInItem || shouldIgnore())
-	//	{
-	//		event->ignore();
-	//		bIgnore = true;
-	//	}
-	//}
-	//else if (event->type() == QEvent::MouseMove)
-	//{
-	//	if (shouldIgnore())
-	//		event->ignore();
-	//}
-	//else if (event->type() == QEvent::MouseButtonRelease)
-	//{
-	//	if (bIgnore)
-	//		event->ignore();
-	//	bIgnore = false;
-	//}
-	//else if (event->type() == QEvent::MouseButtonDblClick)
-	//{
-	//	if (!mousePosInItem)
-	//		event->ignore();
-	//}
-
+	else if (watched == edit)
+	{
+		QKeyEvent* keyEvent = dynamic_cast<QKeyEvent*>(event);
+		if ((event->type() == QEvent::FocusOut
+			|| (event->type() == QEvent::KeyPress
+				&& keyEvent
+				&& (keyEvent->key() == Qt::Key_Enter
+					|| keyEvent->key() == Qt::Key_Return)
+				)
+			)
+			&& edit->isVisible())
+		{
+			edit->hide();
+			hideText = false;
+			QString oldText = text();
+			QString newText = edit->text();
+			if (oldText.right(4) == ".lnk" || oldText.right(4) == ".url") // 这两种后缀名的文件直接省略后缀
+				newText += oldText.right(4);
+			if (newText != oldText)
+			{
+				setText(newText);
+				emit renamed(oldText.toStdWString(), newText.toStdWString());
+			}
+			update();
+		}
+		else if (event->type() == QEvent::KeyPress
+			&& keyEvent
+			&& (keyEvent->key() == Qt::Key_Escape)
+			)
+		{
+			hideLineEdit();
+		}
+	}
 	return QPushButton::eventFilter(watched, event);
 }
 
@@ -299,6 +382,23 @@ QString elidedMultiLinesText(QWidget* widget,QString text, int lines, Qt::TextEl
 
 void MyFileListItem::mousePressEvent(QMouseEvent* e)
 {
+	switch(e->button())
+	{
+	default:
+		break;
+	case Qt::LeftButton:
+	{
+		//if (isChecked())
+		//{
+		//	if (editDisplayDelayTimer->isActive())
+		//		editDisplayDelayTimer->stop();
+		//	editDisplayDelayTimer->setInterval(1000);
+		//	editDisplayDelayTimer->setSingleShot(true);
+		//	editDisplayDelayTimer->start();
+		//}
+		break;
+	}
+	}
 }
 void MyFileListItem::mouseMoveEvent(QMouseEvent* e)
 {

@@ -221,6 +221,7 @@ private:
 	TableStruct tableStruct;
 
 public:
+	void initialize();
 	~AbstractDatabaseConfigManager();
 	AbstractDatabaseConfigManager();
 	AbstractDatabaseConfigManager(std::wstring dbFile);

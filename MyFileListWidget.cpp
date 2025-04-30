@@ -49,6 +49,7 @@
 #include <QFileInfo>
 #include "FileChangesChecker.h"
 #include "ConfigManager.h"
+#include "FileContextMenu.h"
 
 //声明&定义
 //注册表
@@ -72,8 +73,8 @@
 
 long long MyFileListWidget::useCount = 0;// 对象计数
 
-std::mutex MyFileListWidget::mtxConfigFile;
-std::mutex MyFileListWidget::mtxWindowsConfigFile;
+//std::mutex MyFileListWidget::mtxConfigFile = std::mutex();
+//std::mutex MyFileListWidget::mtxWindowsConfigFile = std::mutex();
 
 bool isDigits(std::wstring wstr)
 {
@@ -117,8 +118,10 @@ void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
 	if (!sc) return;
 	QRect re = sc->geometry();
 	re = sc->availableGeometry();
-	itemSize = QSize(re.width() / zoomScreenWidth, re.width() / zoomScreenWidth *5 / 4);
-	itemsNumPerColumn = height() / (itemSize.height() + itemSpacing.line);
+	if (zoomScreenWidth && (zoomScreenWidth * 5 / 4))
+		itemSize = QSize(re.width() / zoomScreenWidth, re.width() / zoomScreenWidth * 5 / 4);
+	if (itemSize.height() + itemSpacing.line)
+		itemsNumPerColumn = height() / (itemSize.height() + itemSpacing.line);
 	if (itemsNumPerColumn == 0)
 		itemsNumPerColumn = 1;
 }
@@ -134,12 +137,14 @@ void MyFileListWidget::refreshInitialize(QWidget* parent, std::vector<std::wstri
 	/*计算item大小和每列item的个数*/
 	// 先计算，因为读取配置文件的时候要按照大小创建桌面图标Item
 	changeItemSizeAndNumbersPerColumn();
+	std::cout << "MyFileListWidget: ChangeItemSizeAndNumbersPerColumn finished!\n";
 	//读取配置文件
 	if (/*pathsList.size() && */!readConfig(config, true))
 	{
 		QMessageBox::critical(this, "错误", "配置文件读取失败！程序即将退出。");
 		return;
 	}
+	std::cout << "MyFileListWidget: ReadConfig succeeded!\n";
 
 	//如果路径列表有内容，就创建Item
 	//for (auto i = pathsList.begin(); i != pathsList.end(); i++)
@@ -147,7 +152,7 @@ void MyFileListWidget::refreshInitialize(QWidget* parent, std::vector<std::wstri
 	for (auto i = pathsList.begin(); i != pathsList.end(); i++)
 	{
 		//开局先检测一遍现有文件与配置文件之间的出入，并更新
-		std::thread(&MyFileListWidget::checkFilesChange, this, *i, true).detach();
+		std::thread(&MyFileListWidget::checkFilesChange, this, *i, true).join();
 
 		//文件监测器，启动！
 		FileChangesChecker* fcc = new FileChangesChecker(*i);
@@ -186,6 +191,7 @@ void MyFileListWidget::refreshInitialize(QWidget* parent, std::vector<std::wstri
 			}, &path);
 		fcc->start();
 	}
+	std::cout << "MyFileListWidget: RefreshInitialize succeeded!\n";
 }
 
 void MyFileListWidget::publicInitialize(QWidget* parent,
@@ -197,21 +203,23 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 	useCount += 1;
 	std::cout << UTF8ToANSI("当前MyFileListWidget对象计数: ") << useCount << std::endl;
 	// TODO: 子窗口以及配置管理
-	this->windowsConfigName = childrenWindowsConfig;
-	this->configName = config;
-	this->windowId = windowId;
+	this->windowsConfigName = childrenWindowsConfig;//设置窗口配置文件名
+	this->configName = config;//设置item配置文件名
+	this->windowId = windowId;//保存窗口id
+	//将当前窗口保存到映射表中
 	childrenWindowsMap[windowId].title = title;
 	childrenWindowsMap[windowId].window = this;
+
 	//读取Windows配置
 	if (childrenWindowsConfig.size() && !readWindowsConfig(childrenWindowsConfig))
 	{
 		QMessageBox::critical(this, "错误", "窗口配置文件读取失败！程序即将退出。");
 		return;
 	}
-
+	//设置标题
 	setWindowTitle(title);
 
-	//读取配置文件
+	//读取配置文件，并创建保存的窗口
 	if (childrenWindowsConfig.size() && readWindowsConfig(childrenWindowsConfig))
 	{
 		for (auto& i : childrenWindowsMap)
@@ -228,25 +236,31 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 				true,//是否显示标题
 				i.second.title // title标题
 			);
-			connect(i.second.window, &MyFileListWidget::updateWindowsConfig, this, [=]() { childrenWindowsMap[id].rect = childrenWindowsMap[id].window->geometry(); writeWindowsConfig(windowsConfigName); });
-			i.second.window->setGeometry(i.second.rect);
-			i.second.window->show();
+			//当收到updateWindowsConfig信号时，更新窗口配置文件
+			connect(i.second.window, &MyFileListWidget::updateWindowsConfig, this,
+				[=]() {
+					childrenWindowsMap[id].rect = childrenWindowsMap[id].window->geometry();
+					writeWindowsConfig(windowsConfigName);
+				}
+			);
+			i.second.window->setGeometry(i.second.rect);//设置窗口几何性质（位置大小）
+			i.second.window->show();//显示窗口
 		}
 	}
 
-
+	//窗口属性设置
 	//setAttribute(Qt::WA_PaintOnScreen, true);
-	setAttribute(Qt::WA_DeleteOnClose);
-	setAttribute(Qt::WA_TranslucentBackground, true);
-	setWindowFlags(Qt::FramelessWindowHint);
-	this->parent = parent;
+	setAttribute(Qt::WA_DeleteOnClose);//关闭窗口删除对象
+	setAttribute(Qt::WA_TranslucentBackground, true);//背景透明
+	setWindowFlags(Qt::FramelessWindowHint);//无边框窗口
+	this->parent = parent;//保存父母
 	if (parent)
 	{
 		// TODO: 修改父母设置方法
 		if (!isMainWindow)
-			setParent(parent);
+			setParent(parent);//Qt提供的api，非主窗口使用
 		else
-			SetParent((HWND)winId(), (HWND)parent->winId());
+			SetParent((HWND)winId(), (HWND)parent->winId());//Windows提供的api，用于将窗口嵌入其他窗口
 	}
 	//setParent(parent);
 	ifShowTitle = showTitle;
@@ -306,6 +320,7 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 		iconInfo.cbSize = sizeof(SHSTOCKICONINFO);
 		HRESULT hr = SHGetStockIconInfo(SIID_FOLDER, SHGSI_ICON | SHGSI_LARGEICON, &iconInfo);
 		iconFolder = QIcon(QPixmap::fromImage(QImage::fromHICON(iconInfo.hIcon)));
+		DestroyIcon(iconInfo.hIcon);
 	}
 	{
 		SHSTOCKICONINFO iconInfo{};
@@ -313,34 +328,41 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 		HRESULT hr = SHGetStockIconInfo(SIID_LINK, SHGSI_ICON | SHGSI_LARGEICON, &iconInfo);
 		QImage imageLink = QImage::fromHICON(iconInfo.hIcon);
 		iconLink = QIcon(QPixmap::fromImage(imageLink.copy(0, imageLink.height() * 3 / 5, imageLink.height() * 2 / 5, imageLink.width() * 2 / 5)));
+		DestroyIcon(iconInfo.hIcon);
 	}
+
+	if (parent && connect(this, &MyFileListWidget::willClose, parent, [parent](long long wid) {
+		MyFileListWidget* p = dynamic_cast<MyFileListWidget*>(parent);
+		if (p)
+		{
+			std::lock_guard<std::mutex> lock(p->mtxChildrenWindowsMap);
+			auto& winsMap = p->childrenWindowsMap;
+			if (winsMap.count(wid))
+			{
+				winsMap.erase(wid);
+				p->writeWindowsConfig(p->windowsConfigName);
+			}
+		}
+	}));
 	//disconnect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
 	//disconnect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem);
 	//disconnect(this, &MyFileListWidget::renameItemSignal, this, &MyFileListWidget::renameItem);
 	if (connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem))
 	{
-#ifdef _DEBUG
 		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem)\n";
-#endif // _DEBUG
 	}
 	if (connect(this, SIGNAL(removeItemSignal(std::wstring, std::wstring)), this, SLOT(removeItem(std::wstring, std::wstring))))
 	{
-#ifdef _DEBUG
 		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem)\n";
-#endif // _DEBUG
 	}
 	if (connect(this, &MyFileListWidget::renameItemSignal, this, &MyFileListWidget::renameItem))
 	{
-#ifdef _DEBUG
 		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::renameItemSignal, this, &MyFileListWidget::renameItem)\n";
-#endif // _DEBUG
 	}
 	//连接窗口配置文件更新信号与槽
 	if (connect(this, &MyFileListWidget::updateWindowsConfig, this, [&]() { writeWindowsConfig(windowsConfigName); }))
 	{
-#ifdef _DEBUG
 		std::cout << "Connect succeeded: connect(this, &MyFileListWidget::updateWindowsConfig, this, [&]() { writeWindowsConfig(windowsConfigName); })\n";
-#endif // _DEBUG
 	}
 
 	itemTaskThread = std::thread(&MyFileListWidget::itemTaskExecuteProc, this);
@@ -366,20 +388,20 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 						{
 							emit static_cast<MyFileListItem*>(i->second.item)->moveSignal(itemPos);
 							//if (static_cast<MyFileListItem*>(i->second.item)->text() == "酷呆桌面.lnk")
-							{
-								std::cout << this->windowId << " ";
-							}
+							//{
+							//	std::cout << this->windowId << " ";
+							//}
 						}
 					}
 				}
 			}
 		});
 	dragArea = new DragArea(itemsNumPerColumn, itemSize, itemSpacing);
-
+	std::cout << "MyFileListWidget: publicInitialize succeeded!\n";
 }
 
 
-
+//构造函数，窗口初始化
 MyFileListWidget::MyFileListWidget(
 	QWidget* parent,//父亲控件
 	std::vector<std::wstring> pathsList,//文件路径列表
@@ -394,15 +416,19 @@ MyFileListWidget::MyFileListWidget(
 {
 	publicInitialize(parent, config, childrenWindowsConfig, windowId, showTitle, title, isMainWindow);
 	refreshInitialize(parent, pathsList, config);
+	std::cout << "Initialize succeeded!\n";
+	initialized = true;//窗口初始化完成
 }
 
 
-
+//右键菜单的刷新功能
 void MyFileListWidget::refreshSelf()
 {
+	//TODO: 右键菜单的刷新功能
 	exit(0);
 }
 
+//右键菜单：打开cmd
 void MyFileListWidget::openCMD(std::wstring path)
 {
 	PathCompletion(path);
@@ -412,6 +438,7 @@ void MyFileListWidget::openCMD(std::wstring path)
 	ShellExecute(0, L"open", L"cmd.exe", ((path == L"") ? path : (std::wstring(L"/s /k pushd \"") + path + L"\"")).c_str(), 0, SW_NORMAL);
 
 }
+//右键菜单：打开PowerShell
 void MyFileListWidget::openPowerShell(std::wstring path)
 {
 	PathCompletion(path);
@@ -468,6 +495,28 @@ void MyFileListWidget::sendCreateItemSignalAndWriteConfig(std::wstring name, std
 	writeConfig(configName);
 }
 
+void MyFileListWidget::processRemoveItem(std::wstring name, std::wstring path)
+{
+	std::unique_lock<std::mutex> lock1(mtxItemsMap, std::defer_lock); // 1
+	std::unique_lock<std::mutex> lock2(mtxChildrenWindowsMap, std::defer_lock); // 2
+	std::lock(lock1, lock2);
+	std::wstring nwp = path + name;
+	if (itemsMap.count(nwp))
+	{
+		long long wid = itemsMap[nwp].windowId;
+		if (wid != this->windowId)
+		{
+			if (childrenWindowsMap.count(wid))
+				std::thread([=]() {
+					childrenWindowsMap[wid].window->processRemoveItem(name, path);
+				}).detach();
+		}
+		lock1.unlock();
+		lock2.unlock();
+		sendRemoveItemSignalAndWriteConfig(name, path);
+	}
+}
+
 void MyFileListWidget::sendRemoveItemSignalAndWriteConfig(std::wstring name, std::wstring path)
 {
 	std::unique_lock<std::mutex> ulMtxItemTask(mtxItemTaskExecute); // 互斥锁管理器，允许在不同线程间传递，允许手动加锁解锁
@@ -475,6 +524,30 @@ void MyFileListWidget::sendRemoveItemSignalAndWriteConfig(std::wstring name, std
 	emit removeItemSignal(name, path);
 	cvItemTaskFinished.wait(ulMtxItemTask);
 	writeConfig(configName);
+}
+
+void MyFileListWidget::processRenameItem(std::wstring oldName, std::wstring path, std::wstring newName)
+{
+	//使用递归锁
+	//std::recursive_mutex recursiveMutex;
+	std::unique_lock<std::mutex> lock1(mtxItemsMap, std::defer_lock);
+	std::unique_lock<std::mutex> lock2(mtxChildrenWindowsMap, std::defer_lock);
+	std::lock(lock1, lock2);
+	std::wstring nwp = path + oldName;
+	if (itemsMap.count(nwp))
+	{
+		long long wid = itemsMap[nwp].windowId;
+		if (wid != this->windowId)
+		{
+			if (childrenWindowsMap.count(wid))
+				std::thread([=]() {
+					childrenWindowsMap[wid].window->processRenameItem(oldName, path, newName);
+				}).detach();
+		}
+		lock1.unlock();
+		lock2.unlock();
+		sendRenameItemSignalAndWriteConfig(oldName, path, newName);
+	}
 }
 
 void MyFileListWidget::sendRenameItemSignalAndWriteConfig(std::wstring oldName, std::wstring path, std::wstring newName)
@@ -1019,6 +1092,7 @@ void MyFileListWidget::CreateDesktopPopupMenu()
 				{
 					std::wstring type = info.szTypeName;
 					QIcon icon = QPixmap::fromImage(QImage::fromHICON(info.hIcon));
+					DestroyIcon(info.hIcon);
 
 					newOptions->addAction(icon, QString::fromStdWString(type),
 						QKeySequence(),//加速键
@@ -1104,7 +1178,10 @@ void MyFileListWidget::CreateDesktopPopupMenu()
 	disconnect(menu1, &QMenu::triggered, this, &MyFileListWidget::MenuClickedProc);
 	menu1->deleteLater();
 	if (bClose)
+	{
+		emit willClose(windowId);
 		close();
+	}
 }
 
 signed long long MyFileListWidget::getAvailableWindowId()
@@ -1493,6 +1570,7 @@ void MyFileListWidget::resizeEvent(QResizeEvent* e)
 	emit updateWindowsConfig();
 }
 
+
 bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
 {
 	MSG* msg = (MSG*)message;
@@ -1541,7 +1619,6 @@ bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, q
 	return QWidget::nativeEvent(eventType, message, result);
 }
 
-
 bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 {
 	// 处理子控件的事件
@@ -1562,6 +1639,7 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 #ifdef _DEBUG
 					std::cout << "MouseButtonPress: MyFileListItem: " << UTF8ToANSI(item->objectName().toStdString()) << std::endl;
 #endif // _DEBUG
+					item->setShouldShowLineEdit(false);
 					keyboardModifiers = QGuiApplication::keyboardModifiers();
 					if (keyboardModifiers & Qt::ControlModifier)
 					{
@@ -1575,6 +1653,12 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 							emit selectionAreaResized(selectionArea->getGeometry());
 							item->setChecked(true);
 						}
+						else
+						{
+							if (!item->isRenamingWhenPressAndClearRenameState())
+								item->setShouldShowLineEdit(true);
+						}
+
 					}
 				}
 				break;
@@ -1602,11 +1686,29 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 							emit selectionAreaResized(selectionArea->getGeometry());
 							item->setChecked(true);
 						}
+						if (item->shouldShowLineEdit())
+						{
+							item->setShouldShowLineEdit(false);
+							if (dragArea->getSelectedItemsMap().size() == 1)
+								item->delayShowLineEdit();
+						}
 					}
 				}
-				else if (e && (e->buttons() & Qt::RightButton))//右键松开
+				else if (e && (e->button() == Qt::RightButton))//右键松开
 				{
-
+					//鼠标右键，打开菜单
+					POINT mousePoint = { 0 };
+					GetCursorPos(&mousePoint);
+					//ShowFileContextMenu(
+					//	(HWND)this->winId(),
+					//	(item->getPath() + item->text().toStdWString()),
+					//	mousePoint);
+					FileContextMenu fileContextMenu;
+					fileContextMenu.setFilePath(
+						item->getPath() + item->text().toStdWString()
+					);
+					fileContextMenu.setParent(this);
+					fileContextMenu.exec(mousePoint);
 				}
 				break;
 			}
@@ -1736,9 +1838,27 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 
 				break;
 			}
+			case QEvent::MouseButtonDblClick:
+			{
+				if (e && (e->button() == Qt::LeftButton))//左键双击
+				{
+					if (item->getLineEditDisplayDelayTimer()->isActive())
+					{
+						item->getLineEditDisplayDelayTimer()->stop();
+						item->getLineEditDisplayDelayTimer()->setInterval(item->getTimerInterval());
+					}
+					item->hideLineEdit();
+					emit item->doubleClicked();
+				}
+				break;
+			}
 			break;
 			}
 		}
+	}
+	else if (watched == this)
+	{
+
 	}
 	return QWidget::eventFilter(watched, event);
 }
@@ -1765,47 +1885,6 @@ void MyFileListWidget::dragLeaveEvent(QDragLeaveEvent* e)
 // 接受QDrag的drop时调用
 void MyFileListWidget::dropEvent(QDropEvent* e)
 {
-	//if (pathsList.size())
-	//{
-	//	std::wstring goalPath;
-	//	if (pathsList.size() > 1)
-	//	{
-	//		QMenu menu(this);
-	//		for (std::wstring path : pathsList)
-	//		{
-	//			QAction* action = new QAction(QString::fromStdWString(path), &menu);
-	//			connect(action, &QAction::triggered, this, [&goalPath, action]() {
-	//				goalPath = action->text().toStdWString();
-	//				});
-	//			menu.addAction(action);
-	//		}
-	//		menu.exec(QCursor::pos());
-	//	}
-	//	else
-	//		goalPath = pathsList[0];
-	//	if (!goalPath.empty())
-	//	{
-	//		PathCompletion(goalPath);
-	//		std::wstring localFiles;
-	//		for (QUrl url : e->mimeData()->urls())
-	//		{
-	//			std::wstring localFile = url.toLocalFile().replace("/", "\\").toStdWString();
-	//			//std::wstring fileName = url.fileName().toStdWString();
-	//			localFiles += localFile + L'\0';
-	//		}
-	//		const wchar_t* pFrom = localFiles.c_str();
-	//		const wchar_t* pTo = (goalPath).data();
-	//		SHFILEOPSTRUCT fileOp = { 0 };
-	//		//ZeroMemory(&fileOp, sizeof(fileOp));
-	//		fileOp.fAnyOperationsAborted = 0;
-	//		fileOp.hwnd = (HWND)this->winId();
-	//		fileOp.pFrom = pFrom;
-	//		fileOp.pTo = pTo;
-	//		fileOp.wFunc = FO_COPY;
-	//		//fileOp.fFlags
-	//		SHFileOperation(&fileOp);
-	//	}
-	//}
 	if (e->source())
 	{
 		const QMimeData* mimeData = e->mimeData();
@@ -1847,7 +1926,10 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 					itemsMap.erase(nwp);
 				if (source->positionNameWithPathMap.count(selectedItemsMap[nwp].position))
 					source->positionNameWithPathMap.erase(selectedItemsMap[nwp].position);
+				if (positionNameWithPathMap.count(selectedItemsMap[nwp].position))
+					positionNameWithPathMap.erase(selectedItemsMap[nwp].position);
 			}
+			std::unordered_map<long long, std::wstring> conflictSelectedItemsMap;
 			for (auto i = data.begin(); i != data.end(); i++)
 			{
 				std::wstring nwp = i->item.path + i->item.name;
@@ -1856,6 +1938,7 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 				std::cout << "   Offset: (" << i->offset.x() << "," << i->offset.y() << ")" << std::endl;
 				QPoint itemPos = e->position().toPoint() - i->offset;
 				const long long& oldPosition = itemProp.position;
+				bool outOfRange = (itemPos.x() < 0 || itemPos.y() < 0);
 				long long newPosition = calculatePositionNumberFromPos(itemPos);
 				qDebug() << "   calc item pos: " << itemPos;
 				std::cout << "   New position: " << newPosition << std::endl;
@@ -1874,19 +1957,27 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 				}
 				itemProp.windowId = this->windowId;
 				itemProp.position = newPosition;
+				if (outOfRange)
+				{
+					long long i = newPosition;
+					while (conflictSelectedItemsMap.count(i) && i >= 0)
+						i++;
+					if (i >= 0)
+					{
+						conflictSelectedItemsMap[i] = nwp;
+						itemProp.position = i;
+					}
+					else
+					{
+						MessageBox(0, L"Error: Cannot find blank!", L"Error", MB_ICONERROR);
+					}
+				}
 			}
-			//更新itemsMap
-			for (auto i = selectedItemsMap.begin(); i != selectedItemsMap.end(); i++)
-			{
-				itemsMap[i->first] = i->second;
-				//把item放置到新的位置
-				positionNameWithPathMap[i->second.position] = i->first;
-				MyFileListItem* item = static_cast<MyFileListItem*>(i->second.item);
-				Index index = calculateIndex(i->second.position);
-				QPoint itemPos = calculatePosFromIndex(index);
+			//更新用的lambda
+			auto changeItemParent = [&](MyFileListItem* item, std::wstring nwp, QPoint itemPos) {
 				if (source != this)
 				{
-					source->getItemsMap()[i->first].windowId = this->windowId;
+					source->getItemsMap()[nwp].windowId = this->windowId;
 					source->changeDragAreaItem(false, item);
 					disconnect(source, &MyFileListWidget::selectionAreaResized, item, &MyFileListItem::judgeSelection);
 					disconnect(item, &MyFileListItem::checkChange, source, 0);
@@ -1901,7 +1992,46 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 					item->show();
 					changeDragAreaItem(true, item);
 				}
+			};
+			//更新itemsMap
+			for (auto i = selectedItemsMap.begin(); i != selectedItemsMap.end(); i++)
+			{
+				//超出屏幕区域的暂不处理
+				if (conflictSelectedItemsMap.count(i->second.position)
+					&& conflictSelectedItemsMap[i->second.position] == i->first)
+					continue;
+				itemsMap[i->first] = i->second;
+				//把item放置到新的位置
+				positionNameWithPathMap[i->second.position] = i->first;
+				MyFileListItem* item = static_cast<MyFileListItem*>(i->second.item);
+				Index index = calculateIndex(i->second.position);
+				QPoint itemPos = calculatePosFromIndex(index);
+				changeItemParent(item, i->first, itemPos);
 			}
+			for (auto i = conflictSelectedItemsMap.begin(); i != conflictSelectedItemsMap.end(); i++)
+			{
+				//检测是否有item冲突，如有则消除排斥
+				long long tmpPosition = i->first;
+				while (positionNameWithPathMap.count(tmpPosition))
+					tmpPosition += 1;
+				if (tmpPosition < 0)
+					continue;
+				for (long long iPosition = tmpPosition - 1; iPosition >= i->first; iPosition--)
+				{
+					std::wstring nwp = positionNameWithPathMap[iPosition];
+					itemsMap[nwp].position = iPosition + 1;
+					positionNameWithPathMap.erase(iPosition);
+					positionNameWithPathMap[iPosition + 1] = nwp;
+				}
+				ItemProp& ip = itemsMap[i->second] = selectedItemsMap[i->second];
+				//把item放置到新的位置
+				positionNameWithPathMap[i->first] = i->second;
+				MyFileListItem* item = static_cast<MyFileListItem*>(ip.item);
+				Index index = calculateIndex(i->first);
+				QPoint itemPos = calculatePosFromIndex(index);
+				changeItemParent(item, i->second, itemPos);
+			}
+
 			if (source != this)
 			{
 				source->mtxItemsMap.unlock();//互斥锁
@@ -1911,6 +2041,50 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 		// 拖动完成后，写入配置文件
 		writeConfig(configName);
 	}//拖放item，本软件窗口之间的item拖放，不涉及文件复制和移动
+	else {
+		if (pathsList.size())
+		{
+			std::wstring goalPath;
+			if (pathsList.size() > 1)
+			{
+				QMenu menu(this);
+				for (std::wstring path : pathsList)
+				{
+					QAction* action = new QAction(QString::fromStdWString(path), &menu);
+					connect(action, &QAction::triggered, this, [&goalPath, action]() {
+						goalPath = action->text().toStdWString();
+						});
+					menu.addAction(action);
+				}
+				menu.exec(QCursor::pos());
+			}
+			else
+				goalPath = pathsList[0];
+			if (!goalPath.empty())
+			{
+				PathCompletion(goalPath);
+				std::wstring localFiles;
+				for (QUrl url : e->mimeData()->urls())
+				{
+					std::wstring localFile = url.toLocalFile().replace("/", "\\").toStdWString();
+					//std::wstring fileName = url.fileName().toStdWString();
+					localFiles += localFile + L'\0';
+				}
+				const wchar_t* pFrom = localFiles.c_str();
+				const wchar_t* pTo = (goalPath).data();
+				SHFILEOPSTRUCT fileOp = { 0 };
+				//ZeroMemory(&fileOp, sizeof(fileOp));
+				fileOp.fAnyOperationsAborted = 0;
+				fileOp.hwnd = (HWND)this->winId();
+				fileOp.pFrom = pFrom;
+				fileOp.pTo = pTo;
+				fileOp.wFunc = FO_COPY;
+				//fileOp.fFlags
+				SHFileOperation(&fileOp);
+			}
+		}
+	}
+
 }
 
 
@@ -2040,9 +2214,26 @@ std::vector<std::wstring> MyFileListWidget::splitForConfig(std::wstring text, st
 
 bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 {
+	auto addWindowsConfig = [&](long long id, std::wstring title, int x, int y, int width, int height) {
+		std::cout << id << " " << wstr2str_2ANSI(title) << " " << x << " " << y
+			<< " " << width << " " << height << std::endl;
+		if (!childrenWindowsMap.count(id))
+		{
+			childrenWindowsMap[id] = {
+				nullptr, title,
+				QRect(x, y, width, height)
+			};
+		}
+		else
+		{
+			auto& windowProp = childrenWindowsMap[id];
+			windowProp.title = title;
+			windowProp.rect = QRect(x, y, width, height);
+		}
+	};
 	bool result = true;
 	std::thread([&]() {
-		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
+		//LOGLOCK(mtxWindowsConfigFile)
 		using namespace std;
 		switch (configMode)
 		{
@@ -2075,9 +2266,9 @@ bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 					while (getline(fConfig, strLine))
 					{
 						++lineCount;
-#ifdef _DEBUG
-						cout << strLine << endl;
-#endif // !_DEBUG
+//#ifdef _DEBUG
+//						cout << strLine << endl;
+//#endif // !_DEBUG
 						std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
 						wstrLine = converter.from_bytes(strLine);
 						vector<wstring> conf = split(wstrLine);
@@ -2119,17 +2310,8 @@ bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 									}
 									windowTitle = conf[1];
 								}
-								if (!childrenWindowsMap.count(stoll(conf[0])))
-									childrenWindowsMap[stoll(conf[0])] = {
-										nullptr, windowTitle,
-										QRect(stoi(cx), stoi(cy), stoi(width), stoi(height))
-								};
-								else
-								{
-									auto& windowProp = childrenWindowsMap[stoll(conf[0])];
-									windowProp.title = windowTitle;
-									windowProp.rect = QRect(stoi(cx), stoi(cy), stoi(width), stoi(height));
-								}
+								addWindowsConfig(stoll(conf[0]), windowTitle, stoi(cx), stoi(cy), stoi(width), stoi(height));
+
 							}
 						}
 						catch (string errMsg) {
@@ -2179,21 +2361,7 @@ bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 				int y = sqlite3_column_int(stmt, 3);
 				int width = sqlite3_column_int(stmt, 4);
 				int height = sqlite3_column_int(stmt, 5);
-				std::cout << id << " " << title << " " << x << " " << y
-					<< " " << width << " " << height << std::endl;
-				if (!childrenWindowsMap.count(id))
-				{
-					childrenWindowsMap[id] = {
-						nullptr, titleWStr,
-						QRect(x, y, width, height)
-					};
-				}
-				else
-				{
-					auto& windowProp = childrenWindowsMap[id];
-					windowProp.title = titleWStr;
-					windowProp.rect = QRect(x, y, width, height);
-				}
+				addWindowsConfig(id, titleWStr, x, y, width, height);
 			}
 			sqlite3_finalize(stmt);
 			sqlite3_close(db);
@@ -2218,19 +2386,7 @@ bool MyFileListWidget::readWindowsConfig(std::wstring nameWithPath)
 					int height = any_cast<int>(lineData[5]);
 					std::cout << id << " " << UTF8ToANSI(titleStr) << " " << x << " " << y
 						<< " " << width << " " << height << std::endl;
-					if (!childrenWindowsMap.count(id))
-					{
-						childrenWindowsMap[id] = {
-							nullptr, titleWStr,
-							QRect(x, y, width, height)
-						};
-					}
-					else
-					{
-						auto& windowProp = childrenWindowsMap[id];
-						windowProp.title = titleWStr;
-						windowProp.rect = QRect(x, y, width, height);
-					}
+					addWindowsConfig(id, titleWStr, x, y, width, height);
 				},
 				nullptr/*user data*/);
 			configManager.read();
@@ -2249,22 +2405,7 @@ bool MyFileListWidget::writeWindowsConfig(std::wstring nameWithPath)
 {
 	bool result = true;
 	std::thread([&]() {
-		std::lock_guard<std::mutex> lock(mtxWindowsConfigFile);//互斥锁加锁
-		//class UnCheckedLock {
-		//private:
-		//	std::mutex& mutex;
-		//public:
-		//	~UnCheckedLock() {
-		//		mutex.unlock();
-		//	}
-		//	UnCheckedLock(std::mutex& mutex) : mutex(mutex) {
-		//		mutex.lock();
-		//	}
-		//	UnCheckedLock(std::mutex& mutex, bool hasLock) : mutex(mutex) {
-		//		if (!hasLock)
-		//			mutex.lock();
-		//	}
-		//} lock(mtxWindowsConfigFile);
+		//LOGLOCK(mtxWindowsConfigFile)
 		using namespace std;
 		switch (configMode)
 		{
@@ -2345,7 +2486,7 @@ bool MyFileListWidget::writeWindowsConfig(std::wstring nameWithPath)
 		case ConfigMode::DatabaseConfigManager:
 		{
 			DatabaseConfigManager configManager(databaseFileName);
-			configManager.createTable(windowsConfigName, windowsConfigTableStruct, false, true);
+			configManager.createTable(windowsConfigName, windowsConfigTableStruct, true, true);
 			try {
 				configManager.transactionBegin();
 				for (auto i : childrenWindowsMap)
@@ -2386,210 +2527,167 @@ bool MyFileListWidget::writeWindowsConfig(std::wstring nameWithPath)
 
 bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreateItem)
 {
-	switch (configMode)
-	{
-	case ConfigMode::File:
-	{
-		using namespace std;
-		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
-
-		fstream fConfig(nameWithPath, ios::app | ios::out);
-		if (!fConfig.is_open())
-			return false;
-		else
+	bool result = true;
+	auto addConfigItems = [&](long long wid, std::wstring name, std::wstring path, long long position) {
+		mtxItemsMap.lock();
+		itemsMap[path + name] = {
+			wid, 0, name, path, position
+		};
+		if (wid == this->windowId)
+			positionNameWithPathMap[position] = path + name;
+		mtxItemsMap.unlock();
+		if (whetherToCreateItem)
 		{
-			fConfig.close();
-			fConfig.open(nameWithPath, ios::in);
-			if (fConfig.is_open())
+			WindowInfo thisWindowInfo{ this, windowTitle().toStdWString(), geometry() };
+			auto& windowProp = (wid == windowId) ? thisWindowInfo : childrenWindowsMap[wid];
+			if (!windowProp.window)
 			{
-				//llong linesNum = 0;
-				//while (fConfig >> strTmp)
-				//	linesNum++;
-				//fConfig.clear();
-				//fConfig.seekg(0, ios::beg);
-#ifdef _DEBUG
-				wcout << str2wstr_2UTF8("配置文件：") << endl;
-#endif // _DEBUG
-				if (fConfig.peek() != ifstream::traits_type::eof())//判断文件是否为空，成立为空
-				{
-					size_t lineCount = 0;
-					wstring wstrLine;
-					string strLine;
-					while (getline(fConfig, strLine))
-					{
-						std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-						wstrLine = converter.from_bytes(strLine);
-						vector<wstring> conf = splitForConfig(wstrLine);
-						++lineCount;
-#ifdef _DEBUG
-						if (conf.size() < 4)
-						{
-							cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
-							continue;
-						}
-						cout << wstr2str_2ANSI(wstrLine) << endl;
-#else
-						if (conf.size() < 4)
-							continue;
-#endif // _DEBUG
-						mtxItemsMap.lock();
-						itemsMap[conf[1] + conf[0]] = {
-							stoll(conf[3]), 0, conf[0], conf[1], stoll(conf[2])
-						};
-						if (stoll(conf[3]) == this->windowId)
-							positionNameWithPathMap[stoll(conf[2])] = conf[1] + conf[0];
-						mtxItemsMap.unlock();
-						if (whetherToCreateItem)
-						{
-							WindowInfo thisWindowInfo{ this, windowTitle().toStdWString(), geometry() };
-							auto& windowProp = (stoll(conf[3]) == windowId) ? thisWindowInfo : childrenWindowsMap[stoll(conf[3])];
-							if (!windowProp.window)
-							{
-								QRect newWindowRect(
-									QPoint((width() - width() / 3) / 2,
-										(height() - height() / 3) / 2),
-									size() / 3
-								);
-								//TODO: 子窗口创建
-								windowProp.window = 0;
-							}
-							if (windowProp.window)
-								windowProp.window->createItem(conf[0], conf[1]);
-						}
-					}
-				}
-				//关闭文件
+				//TODO: 子窗口创建
+			}
+			//if (windowProp.window)
+			if (windowProp.window == this)
+				windowProp.window->createItem(name, path);
+		}
+	};
+	//std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
+	bool threadStop = false;
+	//std::thread t([&]() { LOGLOCK(mtxConfigFile) while (!threadStop); });
+		switch (configMode)
+		{
+		case ConfigMode::File:
+		{
+			using namespace std;
+
+			fstream fConfig(nameWithPath, ios::app | ios::out);
+			if (!fConfig.is_open())
+				return (result = false);
+			else
+			{
 				fConfig.close();
-			}
-		}
-		return true;
-	}
-		break;
-	case ConfigMode::Database:
-	{
-		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
-
-		using namespace std;
-		//TODO: 数据库读取
-		vector<DatabaseColumn> tableStruct = {
-			{ "windowId", BIGINT },
-			{ "name", TEXT },
-			{ "path", TEXT },
-			{ "position", BIGINT }
-		};
-		vector<unsigned long long> primaryKeyIndex{ 1,2 };//这里表示name和path的复合主键
-		sqlite3* db = nullptr;
-		sqlite3_stmt* stmt;
-		DatabasePreparation dbp = {
-			configName,
-			tableStruct,
-			primaryKeyIndex
-		};
-		std::tie(db, stmt) = prepareDatabase(dbp, Read);
-		//开始遍历查询
-		int returnCode = SQLITE_OK;
-		wcout << str2wstr_2UTF8("配置文件：") << endl;
-		while ((returnCode = sqlite3_step(stmt)) == SQLITE_ROW)
-		{
-			long long id = sqlite3_column_int64(stmt, 0);
-			const unsigned char* name = sqlite3_column_text(stmt, 1);
-			const unsigned char* path = sqlite3_column_text(stmt, 2);
-			long long position = sqlite3_column_int64(stmt, 3);
-			std::string nameStr = name ? reinterpret_cast<const char*>(name) : "";
-			std::string pathStr = path ? reinterpret_cast<const char*>(path) : "";
-			std::wstring nameWStr = str2wstr_2UTF8(nameStr);
-			std::wstring pathWStr = str2wstr_2UTF8(pathStr);
-			std::cout << id << " " << nameStr << " " << pathStr << " " << position << std::endl;
-
-			mtxItemsMap.lock();
-			itemsMap[pathWStr + nameWStr] = {
-				id, 0, nameWStr, pathWStr, position
-			};
-			if (id == this->windowId)
-				positionNameWithPathMap[position] = pathWStr + nameWStr;
-			mtxItemsMap.unlock();
-			if (whetherToCreateItem)
-			{
-				WindowInfo thisWindowInfo{ this, windowTitle().toStdWString(), geometry() };
-				auto& windowProp = (id == windowId) ? thisWindowInfo : childrenWindowsMap[id];
-				if (!windowProp.window)
+				fConfig.open(nameWithPath, ios::in);
+				if (fConfig.is_open())
 				{
-					QRect newWindowRect(
-						QPoint((width() - width() / 3) / 2,
-							(height() - height() / 3) / 2),
-						size() / 3
-					);
-					//TODO: 子窗口创建
-					windowProp.window = 0;
-				}
-				if (windowProp.window)
-					windowProp.window->createItem(nameWStr, pathWStr);
-			}
-		}
-
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-	}
-		break;
-	case ConfigMode::DatabaseConfigManager:
-	{
-		using namespace std;
-		DatabaseConfigManager configManager(databaseFileName);
-		//不覆盖创建
-		configManager.createTable(configName, configTableStruct);
-		//设置默认读取的表名和结构
-		configManager.setTableNameAndStruct(configName, configTableStruct);
-		configManager.setCallbackWhileReading(
-			[&](std::vector<std::any> lineData, void* userData) {
-				long long wid = any_cast<long long>(lineData[0]);
-				std::string nameStr = any_cast<string>(lineData[1]);
-				std::wstring nameWStr = str2wstr_2UTF8(nameStr);
-				std::string pathStr = any_cast<string>(lineData[2]);
-				std::wstring pathWStr = str2wstr_2UTF8(pathStr);
-				long long position = any_cast<long long>(lineData[3]);
-				std::cout << wid << " " << UTF8ToANSI(nameStr) << " " << UTF8ToANSI(pathStr) << " " << position << std::endl;
-
-				mtxItemsMap.lock();
-				itemsMap[pathWStr + nameWStr] = {
-					wid, 0, nameWStr, pathWStr, position
-				};
-				if (wid == this->windowId)
-					positionNameWithPathMap[position] = pathWStr + nameWStr;
-				mtxItemsMap.unlock();
-				if (whetherToCreateItem)
-				{
-					WindowInfo thisWindowInfo{ this, windowTitle().toStdWString(), geometry() };
-					auto& windowProp = (wid == windowId) ? thisWindowInfo : childrenWindowsMap[wid];
-					if (!windowProp.window)
+					//llong linesNum = 0;
+					//while (fConfig >> strTmp)
+					//	linesNum++;
+					//fConfig.clear();
+					//fConfig.seekg(0, ios::beg);
+#ifdef _DEBUG
+					std::wcout << str2wstr_2UTF8("配置文件：") << endl;
+#endif // _DEBUG
+					if (fConfig.peek() != ifstream::traits_type::eof())//判断文件是否为空，成立为空
 					{
-						QRect newWindowRect(
-							QPoint((width() - width() / 3) / 2,
-								(height() - height() / 3) / 2),
-							size() / 3
-						);
-						//TODO: 子窗口创建
-						windowProp.window = 0;
+						size_t lineCount = 0;
+						wstring wstrLine;
+						string strLine;
+						while (getline(fConfig, strLine))
+						{
+							std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+							wstrLine = converter.from_bytes(strLine);
+							vector<wstring> conf = splitForConfig(wstrLine);
+							++lineCount;
+#ifdef _DEBUG
+							if (conf.size() < 4)
+							{
+								cout << UTF8ToANSI("配置文件存在错误:\n	line ") << lineCount << ":" << wstr2str_2ANSI(wstrLine) << endl;
+								continue;
+							}
+							cout << wstr2str_2ANSI(wstrLine) << endl;
+#else
+							if (conf.size() < 4)
+								continue;
+#endif // _DEBUG
+							addConfigItems(stoll(conf[3]), conf[0], conf[1], stoll(conf[2]));
+						}
 					}
-					if (windowProp.window)
-						windowProp.window->createItem(nameWStr, pathWStr);
+					//关闭文件
+					fConfig.close();
 				}
-			}, nullptr
-		);
-		configManager.read();
-		configManager.close();
-	}
-	break;
-	default:
+			}
+			return (result = true);
+		}
 		break;
-	}
-	return true;
+		case ConfigMode::Database:
+		{
+			using namespace std;
+			//TODO: 数据库读取
+			vector<DatabaseColumn> tableStruct = {
+				{ "windowId", BIGINT },
+				{ "name", TEXT },
+				{ "path", TEXT },
+				{ "position", BIGINT }
+			};
+			vector<unsigned long long> primaryKeyIndex{ 1,2 };//这里表示name和path的复合主键
+			sqlite3* db = nullptr;
+			sqlite3_stmt* stmt;
+			DatabasePreparation dbp = {
+				configName,
+				tableStruct,
+				primaryKeyIndex
+			};
+			std::tie(db, stmt) = prepareDatabase(dbp, Read);
+			//开始遍历查询
+			int returnCode = SQLITE_OK;
+			std::wcout << str2wstr_2UTF8("配置文件：") << endl;
+			while ((returnCode = sqlite3_step(stmt)) == SQLITE_ROW)
+			{
+				long long id = sqlite3_column_int64(stmt, 0);
+				const unsigned char* name = sqlite3_column_text(stmt, 1);
+				const unsigned char* path = sqlite3_column_text(stmt, 2);
+				long long position = sqlite3_column_int64(stmt, 3);
+				std::string nameStr = name ? reinterpret_cast<const char*>(name) : "";
+				std::string pathStr = path ? reinterpret_cast<const char*>(path) : "";
+				std::wstring nameWStr = str2wstr_2UTF8(nameStr);
+				std::wstring pathWStr = str2wstr_2UTF8(pathStr);
+				std::cout << id << " " << nameStr << " " << pathStr << " " << position << std::endl;
+
+				addConfigItems(id, nameWStr, pathWStr, position);
+			}
+
+			sqlite3_finalize(stmt);
+			sqlite3_close(db);
+		}
+		break;
+		case ConfigMode::DatabaseConfigManager:
+		{
+			using namespace std;
+			DatabaseConfigManager configManager(databaseFileName);
+			//不覆盖创建
+			configManager.createTable(configName, configTableStruct);
+			//设置默认读取的表名和结构
+			configManager.setTableNameAndStruct(configName, configTableStruct);
+			configManager.setCallbackWhileReading(
+				[&](std::vector<std::any> lineData, void* userData) {
+					long long wid = any_cast<long long>(lineData[0]);
+					std::string nameStr = any_cast<string>(lineData[1]);
+					std::wstring nameWStr = str2wstr_2UTF8(nameStr);
+					std::string pathStr = any_cast<string>(lineData[2]);
+					std::wstring pathWStr = str2wstr_2UTF8(pathStr);
+					long long position = any_cast<long long>(lineData[3]);
+					std::cout << wid << " " << UTF8ToANSI(nameStr) << " " << UTF8ToANSI(pathStr) << " " << position << std::endl;
+
+					addConfigItems(wid, nameWStr, pathWStr, position);
+				}, nullptr
+			);
+			configManager.read();
+			configManager.close();
+		}
+		break;
+		default:
+			break;
+		}
+	//}).join();
+	//threadStop = true;
+	//if (t.joinable())
+	//	t.join();
+	return result;
 }
 
 bool MyFileListWidget::writeConfig(std::wstring nameWithPath)
 {
 	bool result = true;
 	std::thread([&]() {
-		std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
+		//LOGLOCK(mtxConfigFile)
 		using namespace std;
 		switch (configMode)
 		{
@@ -2958,8 +3056,9 @@ void MyFileListWidget::itemTaskExecuteProc()
 {
 	while (!checkFilesChangeThreadExit)
 	{
-		mtxItemTaskQueue.lock();
-		if (!itemTaskQueue.empty())
+		Sleep(10);
+		std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
+		if (!itemTaskQueue.empty() && initialized)
 		{
 			ItemTask it = itemTaskQueue.front();
 #ifdef _DEBUG
@@ -2976,13 +3075,13 @@ void MyFileListWidget::itemTaskExecuteProc()
 			break;
 			case ItemTask::Remove:
 			{
-				sendRemoveItemSignalAndWriteConfig(name, path);
+				processRemoveItem(name, path);
 			}
 			break;
 			case ItemTask::Rename:
 			{
 				std::wstring newName = std::any_cast<std::wstring>(it.args[2]);
-				sendRenameItemSignalAndWriteConfig(name, path, newName);
+				processRenameItem(name, path, newName);
 			}
 			break;
 			default:
@@ -2992,11 +3091,8 @@ void MyFileListWidget::itemTaskExecuteProc()
 			std::cout << "Finish executing item task:" << wstr2str_2ANSI(std::any_cast<std::wstring>(it.args[0])) << std::endl;
 #endif
 			itemTaskQueue.pop();
-			mtxItemTaskQueue.unlock();
 			continue;
 		}
-		mtxItemTaskQueue.unlock();
-		Sleep(10);
 	}
 }
 
@@ -3235,6 +3331,7 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 					HICON hico;
 					piml->GetIcon(sfi.iIcon, ILD_TRANSPARENT, &hico);
 					pLWItemImage = QImage::fromHICON(hico);
+					DestroyIcon(hico);
 					piml->Release();
 				}
 			}
@@ -3255,6 +3352,33 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		connect(pLWItem, &MyFileListItem::checkChange, this, [=](bool checkState) {
 			changeDragAreaItem(checkState, pLWItem);
 		}/*, Qt::QueuedConnection*/);
+		connect(pLWItem, &MyFileListItem::renamed, this, [pLWItem](std::wstring oldName, std::wstring newName) {
+			// 创建文件操作对象
+			IFileOperation* pfo;
+			HRESULT hr = CoCreateInstance(CLSID_FileOperation, NULL, CLSCTX_ALL, IID_PPV_ARGS(&pfo));
+			if (FAILED(hr))
+			{
+				std::cout << "Failed to create IFileOperation instance." << std::endl;
+				return;
+			}
+			// 设置操作标志(如允许撤销、静默模式等)
+			pfo->SetOperationFlags(FOF_ALLOWUNDO/* | FOF_SILENT*/);
+			// 创建要重命名的项目
+			IShellItem* psiItem;
+			hr = SHCreateItemFromParsingName((pLWItem->getPath() + oldName).c_str(), NULL, IID_PPV_ARGS(&psiItem));
+			if (FAILED(hr))
+			{
+				std::cout << "Failed to rename file.\n";
+				return;
+			}
+			// 排队重命名操作
+			pfo->RenameItem(psiItem, newName.c_str(), NULL);
+			// 执行所有排队操作
+			pfo->PerformOperations();
+			// 释放资源
+			psiItem->Release();
+			pfo->Release();
+		});
 		connect(this, &MyFileListWidget::selectionAreaResized, pLWItem, &MyFileListItem::judgeSelection);
 		pLWItem->show();
 	}
@@ -3293,10 +3417,20 @@ void MyFileListWidget::renameItem(std::wstring oldName, std::wstring path, std::
 		ItemProp ip = itemsMap[oldNameWithPath];
 		ip.name = newName;
 		void* item = ip.item;
-		itemsMap[newNameWithPath] = ip;
 		itemsMap.erase(oldNameWithPath);
-		static_cast<MyFileListItem*>(item)->setText(QString::fromStdWString(newName));
-		positionNameWithPathMap[ip.position] = newNameWithPath;
+		itemsMap[newNameWithPath] = ip;
+		if (item)
+		{
+			static_cast<MyFileListItem*>(item)->setText(QString::fromStdWString(newName));
+			if (ip.windowId == this->windowId)
+				positionNameWithPathMap[ip.position] = newNameWithPath;
+		}
+		dragArea->removeItem(oldName, path);
+		if (item && static_cast<MyFileListItem*>(item)->isChecked())
+		{
+			DragArea::ShadowItemInformation sii = { ip.name, ip.path, static_cast<MyFileListItem*>(item)->getImage() };
+			dragArea->addItem(sii);
+		}
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程
 }

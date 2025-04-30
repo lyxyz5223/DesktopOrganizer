@@ -10,6 +10,9 @@
 #include <QMimeData>
 #include <qpen.h>
 #include <qtextoption.h>
+#include <qlineedit.h>
+#include <qtimer.h>
+#include <qplaintextedit.h>
 
 class MyFileListShadowItem
 {
@@ -66,8 +69,6 @@ public:
 	}
 };
 
-
-
 class MyFileListItem : public QPushButton
 {
 	Q_OBJECT
@@ -76,7 +77,11 @@ public:
 		List,
 		Icon,
 	};
-	~MyFileListItem() {}
+	~MyFileListItem() {
+		editDisplayDelayTimer->stop();
+		editDisplayDelayTimer->deleteLater();
+		edit->deleteLater();
+	}
 	MyFileListItem(QWidget* parent, QSize defaultSize);
 	void initialize(QWidget* parent, QSize defaultSize);
 	void setViewMode(ViewMode View_Mode) {
@@ -103,6 +108,7 @@ public:
 
 
 	void setChecked(bool judge) {
+		isRenaming = false;
 		if (isChecked() != judge)
 		{
 			QPushButton::setChecked(judge);
@@ -132,14 +138,62 @@ public:
 		return shadowItem;
 	}
 
+	void showLineEdit() {
+		QString Qtext = text();
+		if (Qtext.right(4) == ".lnk" || Qtext.right(4) == ".url") // 这两种后缀名的文件直接省略后缀
+			Qtext = Qtext.left(Qtext.size() - 4);
+		edit->setAlignment(Qt::AlignCenter);
+		edit->setText(Qtext);
+		//文本居中
+		//edit->document()->setDefaultTextOption(QTextOption(Qt::AlignCenter));
+		//edit->setPlainText(Qtext);
+		hideText = true;
+		update();
+		edit->show();
+		edit->setFocus();
+		isRenaming = true;
+	}
+	void delayShowLineEdit() {
+		if (editDisplayDelayTimer->isActive())
+			editDisplayDelayTimer->stop();
+		editDisplayDelayTimer->setInterval(timerInterval);
+		editDisplayDelayTimer->setSingleShot(true);
+		editDisplayDelayTimer->start();
+	}
+	void setShouldShowLineEdit(bool shouldShow) {
+		_shouldShowLineEdit = shouldShow;
+	}
+	bool shouldShowLineEdit() const {
+		return _shouldShowLineEdit;
+	}
 
+	QTimer* getLineEditDisplayDelayTimer() const {
+		return editDisplayDelayTimer;
+	}
+
+	int getTimerInterval() const {
+		return timerInterval;
+	}
+
+	void hideLineEdit() {
+		edit->hide();
+		hideText = false;
+		update();
+	}
+
+	bool isRenamingWhenPressAndClearRenameState()  {
+		bool res = isRenaming;
+		isRenaming = false;
+		return res;
+	}
 protected:
 	void mousePressEvent(QMouseEvent* e) override;
 	void mouseReleaseEvent(QMouseEvent* e) override;
 	void paintEvent(QPaintEvent* e) override;
 	void mouseDoubleClickEvent(QMouseEvent* e) override {
 		//MessageBox(0, L"DoubleClicked!!!", L"", 0);
-		emit doubleClicked();
+		//由父亲处理
+		//emit doubleClicked();
 	}
 	bool eventFilter(QObject* watched, QEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* e) override;
@@ -152,6 +206,7 @@ signals:
 	void resizeSignal(QSize size);
 	void moveSignal(QPoint pos);
 	void adjustSizeSignal();
+	void renamed(std::wstring oldName, std::wstring newName);
 
 public slots:
 	void MenuClickedProc(QAction* action);
@@ -184,6 +239,14 @@ private:
 
 	double iconZoom = 5.0 / 7;//图标的缩放比例
 	bool bIgnore = false;//是否忽略鼠标事件
+	bool hideText = false;//是否隐藏文字
+
+	//QPlainTextEdit* edit = new QPlainTextEdit(this);
+	QLineEdit* edit = new QLineEdit(this);
+	QTimer* editDisplayDelayTimer = new QTimer();
+	bool _shouldShowLineEdit = false;
+	int timerInterval = 1000;
+	bool isRenaming = false;
 };
 
 

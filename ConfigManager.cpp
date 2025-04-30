@@ -391,22 +391,30 @@ int AbstractDatabaseConfigManager::prepare(sqlite3_stmt*& stmt, std::string prep
 	return code;
 }
 
+
 AbstractDatabaseConfigManager::~AbstractDatabaseConfigManager()
 {
 	sqlite3_close(db);
 }
+void AbstractDatabaseConfigManager::initialize()
+{
+	sqlite3_config(SQLITE_CONFIG_MULTITHREAD);
+	sqlite3_initialize();
+}
 
 AbstractDatabaseConfigManager::AbstractDatabaseConfigManager()
 {
-
+	initialize();
 }
 
 AbstractDatabaseConfigManager::AbstractDatabaseConfigManager(std::wstring dbFile)
 {
+	initialize();
 	this->open(dbFile);
 }
 AbstractDatabaseConfigManager::AbstractDatabaseConfigManager(std::string dbFile)
 {
+	initialize();
 	this->open(str2wstr_2UTF8(dbFile));
 }
 

@@ -1,4 +1,5 @@
 #include "DesktopOrganizer.h"
+#include <QInputDialog>
 
 BOOL CALLBACK EnumWindowsProc(_In_ HWND hwnd, _In_ LPARAM lParam);
 BOOL CALLBACK EnumChildWindowsProc(_In_ HWND hwnd, _In_ LPARAM lParam);
@@ -28,7 +29,10 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     EnumWindows(EnumWindowsProc, 0);
     HWND_SHELLDLL_DefView = ::FindWindowEx(HWND_WorkerW, NULL, L"SHELLDLL_DefView", NULL);
     if (HWND_SHELLDLL_DefView == NULL)
+    {
+        MessageBox((HWND)this->winId(), L"获取桌面句柄失败，请检查系统是否正常。\nClick to exit.\n点击确定退出。", L"error", MB_ICONERROR | MB_OK | MB_TOPMOST);
         exit(999);
+    }
     EnumChildWindows(0, EnumChildWindowsProc, NULL);
     HWND_PopupMenu = FindWindow(L"Microsoft.UI.Content.PopupWindowSiteBridge", 0);
     HWND_PopupMenu_Old = FindWindow(L"#32768", 0);
@@ -51,10 +55,45 @@ DesktopOrganizer::DesktopOrganizer(QWidget *parent)
     QRect re = sc->geometry();
     re = sc->availableGeometry();
     this->resize(re.size());
+    show();//强制显示
+    PWSTR pszPath = NULL;
+
+    // 获取用户主目录（对应原来的CSIDL_PROFILE）
+    HRESULT hr = SHGetKnownFolderPath(FOLDERID_Desktop, 0, NULL, &pszPath);
+
+    if (SUCCEEDED(hr)) {
+        std::wcout << str2wstr_2UTF8("用户目录: ") << pszPath << std::endl;
+    }
+    else {
+        std::cerr << UTF8ToANSI("获取用户目录失败，错误代码: 0x") << std::hex << hr << std::endl;
+    }
+    std::wstring desktopPath;
+    if (SUCCEEDED(hr))
+    {
+        desktopPath = pszPath;
+        CoTaskMemFree(pszPath); // 必须释放内存
+    }
+    bool isOk = false;
+    QString inputPath = QInputDialog::getMultiLineText(0, "Input", "请输入需要映射到桌面的文件夹(取消则退出)：", QString::fromStdWString(desktopPath), &isOk);
+    if (!isOk)
+        exit(0);
+    QStringList qPathList = inputPath.split("\n", Qt::SplitBehaviorFlags::SkipEmptyParts);
+    std::vector<std::wstring> pathList;
+    for (auto i : qPathList)
+        pathList.push_back(i.toStdWString());
+#ifdef _DEBUG
+    pathList.push_back(desktopPath + L"\\桌面软件测试");
+#endif
     MyFileListWidget* pLWidget = new MyFileListWidget(this,
-        std::vector<std::wstring>({ L"C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试", L"C:\\Users\\lyxyz5223\\Desktop"/*, L"D:\\1Downloads"*/}/*文件夹路径C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试*/),
+        //{
+        //    L"C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试",
+        //    L"C:\\Users\\lyxyz5223\\Desktop"/*, L"D:\\1Downloads"*/
+        //}
+        ///*文件夹路径C:\\Users\\lyxyz5223\\Desktop\\桌面软件测试*/,
+        pathList,
         L"config"/*configFile or database name*/,
-        L"windowsConfig", 0, true, L"Desktop Organizer Main Window", true);
+        L"windowsConfig", 0, true, L"Desktop Organizer Main Window", true
+    );
     pLWidget->setViewMode(MyFileListItem::ViewMode::Icon);
     pLWidget->setBackgroundColor(QColor(255, 255, 255, 1));
     //pLWidget->readConfigFile(L"config.ini");
@@ -76,7 +115,7 @@ BOOL CALLBACK EnumWindowsProc(_In_ HWND hwnd, _In_ LPARAM lParam)
 {
     wchar_t WClass[256];
     GetClassName(hwnd, WClass, 256);
-    if (wcscmp(WClass, L"WorkerW") == 0)
+    //if (wcscmp(WClass, L"WorkerW") == 0)
     {
         //if (FindWindowEx(hwnd, NULL, L"SysListView32", L"FolderView") != NULL)
         if (FindWindowEx(hwnd, NULL, L"SHELLDLL_DefView", L"") != NULL)

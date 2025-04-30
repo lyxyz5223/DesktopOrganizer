@@ -19,6 +19,19 @@
 //数据库配置管理器
 #include "ConfigManager.h"
 
+
+#define LOGLOCK(name) std::cout << "will lock "#name"\n";\
+try {\
+	std::lock_guard<std::mutex> lock(name);/*互斥锁加锁*/\
+}\
+catch (std::system_error& e) {\
+	std::cout << "lock "#name" failed: " << e.what() << std::endl;\
+}\
+catch (...) {\
+	std::cout << "lock "#name" failed: unknown error" << std::endl;\
+}\
+std::cout << "locked "#name"\n";
+
 class MyAbstractFileListWidget : public QWidget{
 public:
 
@@ -115,8 +128,8 @@ private:// 属性定义区
 	//ConfigMode == File
 	std::wstring configName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
 	std::wstring windowsConfigName;//如果是File模式，则为配置文件路径；如果是数据库，则为数据表名称
-	static std::mutex mtxWindowsConfigFile;// 读取/写入窗口配置文件的互斥锁
-	static std::mutex mtxConfigFile;// 读取/写入配置文件的互斥锁
+	//static std::mutex mtxWindowsConfigFile;// 读取/写入窗口配置文件的互斥锁
+	//static std::mutex mtxConfigFile;// 读取/写入配置文件的互斥锁
 	//ConfigMode == Database
 	//sqlite3* database = nullptr;//数据库，注释掉：不要多线程同时使用一个db
 	std::string databaseFileName = "config.db";
@@ -184,6 +197,7 @@ private:// 属性定义区
 	double borderWidth = 3.0;
 
 	//临时
+	bool initialized = false;//窗口是否已经初始化完成
 	const int zoomScreen = 10;//item的高度是屏幕高度/宽度中小的那个的1/zoomScreen倍
 	const int zoomScreenWidth = 20; ///item的宽度屏幕宽度1 / zoomScreen倍
 	void changeItemSizeAndNumbersPerColumn();
@@ -407,7 +421,8 @@ public:
 		return index.toPos(itemSize, itemSpacing);
 	}
 	long long calculatePositionNumberFromIndex(Index index) const {
-		return (index.x - 1) * itemsNumPerColumn + (index.y - 1);
+		long long result = (index.x - 1) * itemsNumPerColumn + (index.y - 1);
+		return result;
 	}
 	long long calculatePositionNumberFromPos(QPoint pos) const {
 		Index index {
@@ -416,7 +431,10 @@ public:
 		};
 		index = calculateRelativeIndex(index, 1, 1);
 		auto position = calculatePositionNumberFromIndex(index);
-		return (position >= 0 ? position : 0);
+		if (position >= 0)
+			return position;
+		else
+			return 0;
 	}
 
 	//索引相对位置的计算
@@ -440,7 +458,10 @@ public:
 	//发送创建item信号，并且写入配置
 	void sendCreateItemSignalAndWriteConfig(std::wstring name, std::wstring path);
 	//发送删除item信号，并且写入配置
+	void processRemoveItem(std::wstring name, std::wstring path);
 	void sendRemoveItemSignalAndWriteConfig(std::wstring name, std::wstring path);
+	//处理重命名文件（因为子窗口也需要判断该item是不是自己的，所以需要递归执行）
+	void processRenameItem(std::wstring oldName, std::wstring path, std::wstring newName);
 	//发送重命名item信号，并且写入配置
 	void sendRenameItemSignalAndWriteConfig(std::wstring oldName, std::wstring path, std::wstring newName);
 	//打开软件
@@ -473,6 +494,7 @@ signals:
 	void selectionAreaResized(QRect newGeometry);
 	//提醒父母窗口是时候更新窗口配置文件了
 	void updateWindowsConfig();
+	void willClose(long long wid);
 
 public slots:
 	void createItem(std::wstring name, std::wstring path);
