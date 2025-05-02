@@ -206,7 +206,7 @@ signals:
 	void resizeSignal(QSize size);
 	void moveSignal(QPoint pos);
 	void adjustSizeSignal();
-	void renamed(std::wstring oldName, std::wstring newName);
+	void renamed(std::wstring oldName, std::wstring path, std::wstring newName);
 
 public slots:
 	void MenuClickedProc(QAction* action);

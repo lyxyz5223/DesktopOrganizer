@@ -269,6 +269,21 @@ int AbstractDatabaseConfigManager::createTable(std::wstring tableName, TableStru
 	}
 }
 
+int AbstractDatabaseConfigManager::removeTable(std::wstring tableName)
+{
+	std::wstring sql = L"DROP TABLE IF EXISTS " + tableName;
+	sqlite3_stmt* stmt = nullptr;
+	int res = prepare(stmt, wstr2str_2UTF8(sql));
+	if (res != SQLITE_OK)
+		return res;
+	res = sqlite3_step(stmt);
+	if (res != SQLITE_DONE) {
+		std::cerr << UTF8ToANSI("删除表失败: ") << sqlite3_errmsg(db) << std::endl;
+		sqlite3_finalize(stmt);
+		return res;
+	}
+	return res;
+}
 int AbstractDatabaseConfigManager::read(std::wstring tableName, TableStruct tableStruct)
 {
 	int code = SQLITE_OK;

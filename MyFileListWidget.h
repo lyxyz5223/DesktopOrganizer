@@ -367,9 +367,9 @@ public:
 
 	//配置文件
 	bool readWindowsConfig(std::wstring nameWithPath);
-	bool writeWindowsConfig(std::wstring nameWithPath);
+	[[deprecated]] bool writeWindowsConfig(std::wstring nameWithPath);
 	bool readConfig(std::wstring nameWithPath, bool whetherToCreateItem = false);
-	bool writeConfig(std::wstring nameWithPath);
+	[[deprecated]] bool writeConfig(std::wstring nameWithPath);
 	enum DatabaseOperation {
 		Read,
 		Write
@@ -403,6 +403,12 @@ public:
 	//监视文件夹变动
 	void checkFilesChange(std::wstring path, bool isSingleShot = true);
 	//void checkFilesChangeSingleShotProc(std::wstring path);
+	void close() {
+		hide();//先隐藏窗口，防止继续操作
+		stopAllThread();//关闭所有子线程
+		emit willDeleteWindow(windowId);//处理关闭前窗口内存在的item
+		QWidget::close();//最后再关闭窗口
+	}
 
 public:
 	//item添加删除
@@ -479,12 +485,57 @@ public:
 
 private:
 	signed long long getAvailableWindowId();
+	signed long long getAvailablePosition();
 	void changeDragAreaItem(bool checkState, MyFileListItem* item);
 	auto& getItemsMap() {
 		return itemsMap;
 	}
 	auto& getPositionNameWithPathMap() {
 		return positionNameWithPathMap;
+	}
+	void fileRename(std::wstring oldName, std::wstring path, std::wstring newName);
+
+	auto changeItemParentToThis(MyFileListItem* item, MyFileListWidget* source, long long position) {
+		if (source != this)
+		{
+			std::wstring nwp = item->getPath() + item->text().toStdWString();
+			source->getItemsMap()[nwp].windowId = this->windowId;
+			source->changeDragAreaItem(false, item);
+			disconnect(source, &MyFileListWidget::selectionAreaResized, item, &MyFileListItem::judgeSelection);
+			disconnect(item, &MyFileListItem::checkChange, source, 0);
+			disconnect(item, &MyFileListItem::renamed, this, &MyFileListWidget::fileRename);
+			item->setParent(this);
+			auto pos = calculatePosFromIndex(calculateIndex(position));
+			item->move(pos);
+			//itemsMap[nwp] = source->getItemsMap()[nwp];
+			//positionNameWithPathMap[position] = nwp;
+			connect(this, &MyFileListWidget::selectionAreaResized, item, &MyFileListItem::judgeSelection);
+			connect(item, &MyFileListItem::checkChange, this, [=](bool checkState) {
+				changeDragAreaItem(checkState, item);
+				}/*, Qt::QueuedConnection*/);
+			connect(item, &MyFileListItem::renamed, this, &MyFileListWidget::fileRename);
+			item->removeEventFilter(source);
+			item->installEventFilter(this);
+			item->show();
+			changeDragAreaItem(true, item);
+		}
+	}
+
+	void stopAllThread() {
+		//关闭所有由该窗口创建的线程
+		checkFilesChangeThreadExit = true;
+		//for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
+		//	iter->join();
+		for (auto iter = fileChangesCheckerList.begin(); iter != fileChangesCheckerList.end(); iter++)
+		{
+			(*iter)->stop();
+			delete* iter;
+		}
+		fileChangesCheckerList.clear();
+		if (itemTaskThread.joinable())
+			itemTaskThread.join();
+		if (sizeCalculateThread.joinable())
+			sizeCalculateThread.join();
 	}
 
 signals:
@@ -494,7 +545,7 @@ signals:
 	void selectionAreaResized(QRect newGeometry);
 	//提醒父母窗口是时候更新窗口配置文件了
 	void updateWindowsConfig();
-	void willClose(long long wid);
+	void willDeleteWindow(long long wid);
 
 public slots:
 	void createItem(std::wstring name, std::wstring path);
@@ -530,4 +581,5 @@ protected:
 	void dragLeaveEvent(QDragLeaveEvent* e) override;
 	void dropEvent(QDropEvent* e) override;
 	bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result);
+	void closeEvent(QCloseEvent* e) override;
 };

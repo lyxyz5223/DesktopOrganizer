@@ -90,6 +90,14 @@ private:
 	std::map<std::wstring, FileChangesChecker*> checkerMap;
 
 public:
+	~FileChangesCheckerManager() {
+		for (auto i = checkerMap.begin(); i != checkerMap.end(); i++)
+		{
+			i->second->stop();
+			delete i->second;
+		}
+	}
+
 	FileChangesCheckerManager() {
 
 	}
@@ -99,5 +107,6 @@ public:
 		return *this;
 	}
 
+protected:
 
 };

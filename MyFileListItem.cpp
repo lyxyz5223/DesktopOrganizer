@@ -274,7 +274,7 @@ bool MyFileListItem::eventFilter(QObject* watched, QEvent* event)
 			if (newText != oldText)
 			{
 				setText(newText);
-				emit renamed(oldText.toStdWString(), newText.toStdWString());
+				emit renamed(oldText.toStdWString(), MyPath, newText.toStdWString());
 			}
 			update();
 		}

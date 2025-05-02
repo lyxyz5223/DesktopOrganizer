@@ -97,19 +97,7 @@ MyFileListWidget::~MyFileListWidget()
 {
 	//计数-1
 	useCount -= 1;
-	checkFilesChangeThreadExit = true;
-	//for (auto iter = checkFilesChangeThreads.begin(); iter != checkFilesChangeThreads.end(); iter++)
-	//	iter->join();
-	for (auto iter = fileChangesCheckerList.begin(); iter != fileChangesCheckerList.end(); iter++)
-	{
-		(*iter)->stop();
-		delete* iter;
-	}
-	fileChangesCheckerList.clear();
-	if (itemTaskThread.joinable())
-		itemTaskThread.join();
-	if (sizeCalculateThread.joinable())
-		sizeCalculateThread.join();
+	stopAllThread();
 }
 
 void MyFileListWidget::changeItemSizeAndNumbersPerColumn()
@@ -331,19 +319,55 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 		DestroyIcon(iconInfo.hIcon);
 	}
 
-	if (parent && connect(this, &MyFileListWidget::willClose, parent, [parent](long long wid) {
-		MyFileListWidget* p = dynamic_cast<MyFileListWidget*>(parent);
-		if (p)
-		{
-			std::lock_guard<std::mutex> lock(p->mtxChildrenWindowsMap);
-			auto& winsMap = p->childrenWindowsMap;
-			if (winsMap.count(wid))
+	if (parent && connect(this, &MyFileListWidget::willDeleteWindow, parent,
+		[parent, childrenWindowsConfig, config, dbFile = this->databaseFileName, &itemsMap = itemsMap, this](long long wid) {
+			MyFileListWidget* p = dynamic_cast<MyFileListWidget*>(parent);
+			if (p)
 			{
-				winsMap.erase(wid);
-				p->writeWindowsConfig(p->windowsConfigName);
+				std::unique_lock<std::mutex> l1(p->mtxItemsMap, std::defer_lock);
+				std::unique_lock<std::mutex> l2(p->mtxChildrenWindowsMap, std::defer_lock);
+				std::lock(l1, l2);
+				auto& itsMap = p->itemsMap;
+				auto& winsMap = p->childrenWindowsMap;
+				DatabaseConfigManager dbm(dbFile);
+				for (auto i = childrenWindowsMap.begin(); i != childrenWindowsMap.end();)
+				{
+					if (i->first == wid)
+					{
+						i = childrenWindowsMap.erase(i);
+						continue;
+					}
+					i->second.window->close();
+					i = childrenWindowsMap.begin();
+				}
+				for (auto i = itemsMap.begin(); i != itemsMap.end(); i++)
+				{
+					auto item = static_cast<MyFileListItem*>(i->second.item);
+					if (item)
+					{
+						auto position = p->getAvailablePosition();
+						const std::wstring& nwp = i->first;
+						p->changeItemParentToThis(item, this, position);
+						//i->second.windowId = p->windowId;
+						//i->second.windowId = wid;
+						i->second.position = position;
+						p->itemsMap[nwp] = i->second;
+						p->positionNameWithPathMap[position] = nwp;
+					}
+				}
+				if (winsMap.count(wid))
+				{
+					winsMap.erase(wid);
+					p->writeWindowsConfig(p->windowsConfigName);
+					dbm.removeTable(childrenWindowsConfig);
+				}
+				p->writeConfig(p->configName);
+				dbm.removeTable(config);
+				dbm.close();
 			}
-		}
-	}));
+		})) {
+			std::cout << "Connect succeeded: connect(this, &MyFileListWidget::willDeleteWindow, parent, ...)\n";
+	}
 	//disconnect(this, &MyFileListWidget::createItemSignal, this, &MyFileListWidget::createItem);
 	//disconnect(this, &MyFileListWidget::removeItemSignal, this, &MyFileListWidget::removeItem);
 	//disconnect(this, &MyFileListWidget::renameItemSignal, this, &MyFileListWidget::renameItem);
@@ -1179,7 +1203,6 @@ void MyFileListWidget::CreateDesktopPopupMenu()
 	menu1->deleteLater();
 	if (bClose)
 	{
-		emit willClose(windowId);
 		close();
 	}
 }
@@ -1200,6 +1223,18 @@ signed long long MyFileListWidget::getAvailableWindowId()
 		}
 	}
 	return wid;
+}
+
+signed long long MyFileListWidget::getAvailablePosition()
+{
+	signed long long newPosition = 0;
+	while (newPosition >= 0)
+	{
+		if (!positionNameWithPathMap.count(newPosition))
+			break;
+		newPosition++;
+	}
+	return newPosition;
 }
 
 
@@ -1619,6 +1654,11 @@ bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, q
 	return QWidget::nativeEvent(eventType, message, result);
 }
 
+void MyFileListWidget::closeEvent(QCloseEvent* e)
+{
+
+}
+
 bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 {
 	// 处理子控件的事件
@@ -1973,26 +2013,6 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 					}
 				}
 			}
-			//更新用的lambda
-			auto changeItemParent = [&](MyFileListItem* item, std::wstring nwp, QPoint itemPos) {
-				if (source != this)
-				{
-					source->getItemsMap()[nwp].windowId = this->windowId;
-					source->changeDragAreaItem(false, item);
-					disconnect(source, &MyFileListWidget::selectionAreaResized, item, &MyFileListItem::judgeSelection);
-					disconnect(item, &MyFileListItem::checkChange, source, 0);
-					item->setParent(this);
-					item->move(itemPos);
-					connect(this, &MyFileListWidget::selectionAreaResized, item, &MyFileListItem::judgeSelection);
-					connect(item, &MyFileListItem::checkChange, this, [=](bool checkState) {
-						changeDragAreaItem(checkState, item);
-						}/*, Qt::QueuedConnection*/);
-					item->removeEventFilter(source);
-					item->installEventFilter(this);
-					item->show();
-					changeDragAreaItem(true, item);
-				}
-			};
 			//更新itemsMap
 			for (auto i = selectedItemsMap.begin(); i != selectedItemsMap.end(); i++)
 			{
@@ -2004,9 +2024,9 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 				//把item放置到新的位置
 				positionNameWithPathMap[i->second.position] = i->first;
 				MyFileListItem* item = static_cast<MyFileListItem*>(i->second.item);
-				Index index = calculateIndex(i->second.position);
-				QPoint itemPos = calculatePosFromIndex(index);
-				changeItemParent(item, i->first, itemPos);
+				//Index index = calculateIndex(i->second.position);
+				//QPoint itemPos = calculatePosFromIndex(index);
+				changeItemParentToThis(item, source, i->second.position);
 			}
 			for (auto i = conflictSelectedItemsMap.begin(); i != conflictSelectedItemsMap.end(); i++)
 			{
@@ -2027,9 +2047,9 @@ void MyFileListWidget::dropEvent(QDropEvent* e)
 				//把item放置到新的位置
 				positionNameWithPathMap[i->first] = i->second;
 				MyFileListItem* item = static_cast<MyFileListItem*>(ip.item);
-				Index index = calculateIndex(i->first);
-				QPoint itemPos = calculatePosFromIndex(index);
-				changeItemParent(item, i->second, itemPos);
+				//Index index = calculateIndex(i->first);
+				//QPoint itemPos = calculatePosFromIndex(index);
+				changeItemParentToThis(item, source, i->first);
 			}
 
 			if (source != this)
@@ -2538,15 +2558,17 @@ bool MyFileListWidget::readConfig(std::wstring nameWithPath, bool whetherToCreat
 		mtxItemsMap.unlock();
 		if (whetherToCreateItem)
 		{
-			WindowInfo thisWindowInfo{ this, windowTitle().toStdWString(), geometry() };
-			auto& windowProp = (wid == windowId) ? thisWindowInfo : childrenWindowsMap[wid];
-			if (!windowProp.window)
+			if (childrenWindowsMap.count(wid))
 			{
-				//TODO: 子窗口创建
+				auto& windowProp = childrenWindowsMap[wid];
+				if (!windowProp.window)
+				{
+					//TODO: 子窗口创建
+				}
+				//if (windowProp.window)
+				if (windowProp.window == this)
+					windowProp.window->createItem(name, path);
 			}
-			//if (windowProp.window)
-			if (windowProp.window == this)
-				windowProp.window->createItem(name, path);
 		}
 	};
 	//std::lock_guard<std::mutex> lock(mtxConfigFile);//互斥锁加锁
@@ -3187,6 +3209,34 @@ void MyFileListWidget::changeDragAreaItem(bool checkState, MyFileListItem* item)
 	}
 }
 
+void MyFileListWidget::fileRename(std::wstring oldName, std::wstring path, std::wstring newName)
+{
+	// 创建文件操作对象
+	IFileOperation* pfo;
+	HRESULT hr = CoCreateInstance(CLSID_FileOperation, NULL, CLSCTX_ALL, IID_PPV_ARGS(&pfo));
+	if (FAILED(hr))
+	{
+		std::cout << "Failed to create IFileOperation instance." << std::endl;
+		return;
+	}
+	// 设置操作标志(如允许撤销、静默模式等)
+	pfo->SetOperationFlags(FOF_ALLOWUNDO/* | FOF_SILENT*/);
+	// 创建要重命名的项目
+	IShellItem* psiItem;
+	hr = SHCreateItemFromParsingName((path + oldName).c_str(), NULL, IID_PPV_ARGS(&psiItem));
+	if (FAILED(hr))
+	{
+		std::cout << "Failed to rename file.\n";
+		return;
+	}
+	// 排队重命名操作
+	pfo->RenameItem(psiItem, newName.c_str(), NULL);
+	// 执行所有排队操作
+	pfo->PerformOperations();
+	// 释放资源
+	psiItem->Release();
+	pfo->Release();
+}
 void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 {
 	std::lock_guard<std::mutex> lock(mtxItemsMap);//互斥锁加锁
@@ -3208,30 +3258,7 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		if (itemsMap[nameWithPath].position == -1)
 		{
 			/*判断是否已经放置图标*/
-			/*
-			st = indexesState.find(L'0');
-			if (st == std::wstring::npos)
-			{
-				st = indexesState.length();
-				indexesState += L'0';
-			}
-			indexesState.replace(st, 1, L"1");
-			*/ ///TOREMOVE
-			while (newPosition >= 0)
-			{
-				if (!positionNameWithPathMap.count(newPosition))
-					break;
-				newPosition++;
-			}
-		}
-		else
-		{
-			/*
-			st = itemsMap[nameWithPath].position;
-			for (size_t i = indexesState.length(); i < st + 2; i++)
-				indexesState += L"0";
-			indexesState[st] = '1';
-			*/ ///TOREMOVE
+			newPosition = getAvailablePosition();
 		}
 		if (itemsNumPerColumn == 0)
 			itemsNumPerColumn = 1;
@@ -3352,33 +3379,8 @@ void MyFileListWidget::createItem(std::wstring name, std::wstring path)
 		connect(pLWItem, &MyFileListItem::checkChange, this, [=](bool checkState) {
 			changeDragAreaItem(checkState, pLWItem);
 		}/*, Qt::QueuedConnection*/);
-		connect(pLWItem, &MyFileListItem::renamed, this, [pLWItem](std::wstring oldName, std::wstring newName) {
-			// 创建文件操作对象
-			IFileOperation* pfo;
-			HRESULT hr = CoCreateInstance(CLSID_FileOperation, NULL, CLSCTX_ALL, IID_PPV_ARGS(&pfo));
-			if (FAILED(hr))
-			{
-				std::cout << "Failed to create IFileOperation instance." << std::endl;
-				return;
-			}
-			// 设置操作标志(如允许撤销、静默模式等)
-			pfo->SetOperationFlags(FOF_ALLOWUNDO/* | FOF_SILENT*/);
-			// 创建要重命名的项目
-			IShellItem* psiItem;
-			hr = SHCreateItemFromParsingName((pLWItem->getPath() + oldName).c_str(), NULL, IID_PPV_ARGS(&psiItem));
-			if (FAILED(hr))
-			{
-				std::cout << "Failed to rename file.\n";
-				return;
-			}
-			// 排队重命名操作
-			pfo->RenameItem(psiItem, newName.c_str(), NULL);
-			// 执行所有排队操作
-			pfo->PerformOperations();
-			// 释放资源
-			psiItem->Release();
-			pfo->Release();
-		});
+		//文件重命名
+		connect(pLWItem, &MyFileListItem::renamed, this, &MyFileListWidget::fileRename);
 		connect(this, &MyFileListWidget::selectionAreaResized, pLWItem, &MyFileListItem::judgeSelection);
 		pLWItem->show();
 	}
@@ -3400,6 +3402,7 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 		itemsMap.erase(nameWithPath);
 		if (item)
 		{
+			static_cast<MyFileListItem*>(item)->hide();
 			static_cast<MyFileListItem*>(item)->deleteLater();
 			item = nullptr;
 		}

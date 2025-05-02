@@ -243,10 +243,14 @@ public:
 			return code;
 		}
 	}
+	virtual int open(std::string dbFile) {
+		return open(str2wstr_2UTF8(dbFile));
+	}
 	virtual void close() {
 		sqlite3_close(db);
 	}
 	virtual int createTable(std::wstring tableName, TableStruct tableStruct, bool bCoverOldTable = false, bool bSetTransactionInformation = false);
+	virtual int removeTable(std::wstring tableName);
 	virtual void setTableNameAndStruct(std::wstring tableName, TableStruct ts) {
 		this->tableName = tableName;
 		this->tableStruct = ts;
