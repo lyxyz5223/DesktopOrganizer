@@ -127,6 +127,7 @@
     <ClCompile Include="MyMenuAction.cpp" />
     <ClCompile Include="SelectionArea.cpp" />
     <ClCompile Include="StringProcess.cpp" />
+    <ClCompile Include="ThreadPool.cpp" />
     <QtRcc Include="DesktopOrganizer.qrc" />
     <QtUic Include="DesktopOrganizer.ui" />
     <QtMoc Include="DesktopOrganizer.h" />
@@ -149,6 +150,7 @@
     <ClInclude Include="FunctionWrapper.h" />
     <ClInclude Include="ItemProperty.h" />
     <ClInclude Include="lib\otlv4.h" />
+    <ClInclude Include="ThreadPool.h" />
     <QtMoc Include="MyFileListWidget.h" />
     <QtMoc Include="MyFileListItem.h" />
     <QtMoc Include="SelectionArea.h" />

@@ -165,7 +165,8 @@ private:
 			INSERT,
 			REPLACE,
 			INSERTORREPLACE,
-			UPSERT = INSERTORREPLACE
+			UPSERT = INSERTORREPLACE,
+			REMOVE
 		};
 		WriteCommand(Command cmd) {
 			this->cmd = cmd;
@@ -181,6 +182,8 @@ private:
 				return L"INSERT OR REPLACE";
 				//case WriteCommand::UPSERT:
 				//	break;
+			case WriteCommand::REMOVE:
+				return L"REMOVE";
 			default:
 				return L"";
 			}
@@ -216,6 +219,7 @@ private:
 	//std::function<void()> cbbw;
 	sqlite3* db = nullptr;//数据库
 	sqlite3_stmt* statement = nullptr;//statement
+	WriteCommand stmtOperation = WriteCommand::INSERTORREPLACE;
 	Transaction transaction = Transaction(db);
 	std::wstring tableName;
 	TableStruct tableStruct;
@@ -297,6 +301,7 @@ public:
 	virtual int insertOrReplaceLines(std::vector<std::any> data) {
 		return addLinesExecute(WriteCommand::INSERTORREPLACE, data);
 	}
+	virtual int removeLines(std::vector<std::any> data);
 
 
 	//virtual void setCallbackAfterWrite(const CallBackFunctionOnlyUserData& fc, void* userData) {

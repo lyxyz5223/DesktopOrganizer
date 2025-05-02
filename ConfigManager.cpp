@@ -160,7 +160,7 @@ int AbstractDatabaseConfigManager::addLineExecute(std::wstring tableName, TableS
 int AbstractDatabaseConfigManager::addLinesExecute(WriteCommand command, std::vector<std::any> data)
 {
 	int code = SQLITE_OK;
-	if (!statement)
+	if ((!statement) || (stmtOperation != command))
 	{
 		std::string askSignText, prepareText;
 		std::string cmd = command;
@@ -182,6 +182,7 @@ int AbstractDatabaseConfigManager::addLinesExecute(WriteCommand command, std::ve
 		code = prepare(statement, prepareText);
 		if (code != SQLITE_OK)
 			return code;
+		stmtOperation = command;
 	}
 	//执行预编译语句
 	//写入时bind是从1开始递增
@@ -343,11 +344,15 @@ int AbstractDatabaseConfigManager::read(std::wstring tableName, TableStruct tabl
 
 void AbstractDatabaseConfigManager::transactionBegin()
 {
+	if (transaction.getState() == Transaction::State::Begin)
+		return;
 	transaction.begin();
 }
 
 void AbstractDatabaseConfigManager::transactionCommit()
 {
+	if (transaction.getState() == Transaction::State::End)
+		return;
 	transaction.commit();
 	sqlite3_finalize(statement);
 	statement = nullptr;
@@ -387,7 +392,10 @@ int AbstractDatabaseConfigManager::removeLine(std::wstring tableName, TableStruc
 		DatabaseColumn col = tableStruct.columns[*i];
 		code = bind(stmt, col.type, column, data[column - 1]);
 		if (code != SQLITE_OK)
+		{
+			sqlite3_finalize(stmt);
 			return code;
+		}
 	}
 
 	// 执行删除
@@ -395,6 +403,51 @@ int AbstractDatabaseConfigManager::removeLine(std::wstring tableName, TableStruc
 
 	// 清理资源
 	sqlite3_finalize(stmt);
+	return code;
+}
+
+int AbstractDatabaseConfigManager::removeLines(std::vector<std::any> data)
+{
+	int code = SQLITE_OK;
+	if ((!statement) || stmtOperation != WriteCommand::REMOVE)
+	{
+		// 准备删除语句 - 表名为tableName，复合主键为(name, path)
+		std::string deleteSQL =
+			std::string("DELETE FROM ")
+			+ wstr2str_2UTF8(tableName)
+			+ " WHERE ";
+		//遍历复合主键，添加到语句中
+		if (tableStruct.primaryKeyIndex.size() && tableStruct.columns.size())
+		{
+			deleteSQL += tableStruct.columns[0].name + " = ?";
+			for (auto i = tableStruct.primaryKeyIndex.begin() + 1; i != tableStruct.primaryKeyIndex.end(); i++)
+				deleteSQL += " AND " + tableStruct.columns[*i].name + " = ?";
+		}
+		sqlite3_stmt* stmt = nullptr;
+		int code = prepare(stmt, deleteSQL);
+		if (code != SQLITE_OK)
+			return code;
+	}
+
+	// 绑定参数值
+	long long column = 1;
+	for (auto i = tableStruct.primaryKeyIndex.begin();
+		i != tableStruct.primaryKeyIndex.end(); i++, column++)
+	{
+		DatabaseColumn col = tableStruct.columns[*i];
+		code = bind(statement, col.type, column, data[column - 1]);
+		if (code != SQLITE_OK)
+		{
+			sqlite3_reset(statement);
+			return code;
+		}
+	}
+
+	// 执行删除
+	code = sqlite3_step(statement);
+
+	// 清理资源
+	sqlite3_reset(statement);
 	return code;
 }
 
@@ -409,6 +462,10 @@ int AbstractDatabaseConfigManager::prepare(sqlite3_stmt*& stmt, std::string prep
 
 AbstractDatabaseConfigManager::~AbstractDatabaseConfigManager()
 {
+	if (transaction.getState() == Transaction::State::Begin)
+	{
+		transactionCommit();
+	}
 	sqlite3_close(db);
 }
 void AbstractDatabaseConfigManager::initialize()
