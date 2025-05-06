@@ -132,6 +132,7 @@ private:// 属性定义区
 	//static std::mutex mtxConfigFile;// 读取/写入配置文件的互斥锁
 	//ConfigMode == Database
 	//sqlite3* database = nullptr;//数据库，注释掉：不要多线程同时使用一个db
+	DatabaseConfigManager databaseManager;
 	std::string databaseFileName = "config.db";
 	DatabaseConfigManager::TableStruct windowsConfigTableStruct = {
 		{//columns
@@ -367,9 +368,10 @@ public:
 
 	//配置文件
 	bool readWindowsConfig(std::wstring nameWithPath);
-	[[deprecated]] bool writeWindowsConfig(std::wstring nameWithPath);
+	bool writeWindowsConfig(std::wstring nameWithPath);
 	bool readConfig(std::wstring nameWithPath, bool whetherToCreateItem = false);
-	[[deprecated]] bool writeConfig(std::wstring nameWithPath);
+	//确保仅在dropEvent中调用
+	bool writeConfig(std::wstring nameWithPath);
 	enum DatabaseOperation {
 		Read,
 		Write

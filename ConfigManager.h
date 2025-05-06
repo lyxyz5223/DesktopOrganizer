@@ -246,6 +246,7 @@ public:
 			sqlite3_free(db);
 			return code;
 		}
+		return code;
 	}
 	virtual int open(std::string dbFile) {
 		return open(str2wstr_2UTF8(dbFile));

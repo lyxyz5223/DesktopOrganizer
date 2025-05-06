@@ -268,6 +268,7 @@ int AbstractDatabaseConfigManager::createTable(std::wstring tableName, TableStru
 		sqlite3_free(errMsg);
 		return rc;
 	}
+	return rc;
 }
 
 int AbstractDatabaseConfigManager::removeTable(std::wstring tableName)
@@ -464,7 +465,17 @@ AbstractDatabaseConfigManager::~AbstractDatabaseConfigManager()
 {
 	if (transaction.getState() == Transaction::State::Begin)
 	{
-		transactionCommit();
+		try {
+			transactionCommit();
+		}
+		catch (...) {
+			try {
+				transactionRollback();
+			}
+			catch (...) {
+
+			}
+		}
 	}
 	sqlite3_close(db);
 }

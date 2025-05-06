@@ -191,6 +191,8 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 	useCount += 1;
 	std::cout << UTF8ToANSI("当前MyFileListWidget对象计数: ") << useCount << std::endl;
 	// TODO: 子窗口以及配置管理
+	// 数据库初始化
+	this->databaseManager.open(this->databaseFileName);
 	this->windowsConfigName = childrenWindowsConfig;//设置窗口配置文件名
 	this->configName = config;//设置item配置文件名
 	this->windowId = windowId;//保存窗口id
@@ -353,6 +355,13 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 						i->second.position = position;
 						p->itemsMap[nwp] = i->second;
 						p->positionNameWithPathMap[position] = nwp;
+						std::vector<std::any> data{
+							i->second.windowId,
+							i->second.name,
+							i->second.path,
+							i->second.position
+						};
+						p->databaseManager.insertOrReplaceLine(p->configName, p->configTableStruct, data);
 					}
 				}
 				if (winsMap.count(wid))
@@ -361,7 +370,7 @@ void MyFileListWidget::publicInitialize(QWidget* parent,
 					p->writeWindowsConfig(p->windowsConfigName);
 					dbm.removeTable(childrenWindowsConfig);
 				}
-				p->writeConfig(p->configName);
+				//p->writeConfig(p->configName);
 				dbm.removeTable(config);
 				dbm.close();
 			}
@@ -516,7 +525,18 @@ void MyFileListWidget::sendCreateItemSignalAndWriteConfig(std::wstring name, std
 	std::cout << "Send CreateItem Signal\n";
 	emit createItemSignal(name, path);
 	cvItemTaskFinished.wait(ulMtxItemTask);
-	writeConfig(configName);
+	//writeConfig(configName);
+	if (itemsMap.count(path + name))
+	{
+		std::vector<std::any> data{
+			itemsMap[path + name].windowId,
+			name,
+			path,
+			itemsMap[path + name].position
+		};
+		databaseManager.setTableNameAndStruct(configName, configTableStruct);
+		databaseManager.insertOrReplaceLines(data);
+	}
 }
 
 void MyFileListWidget::processRemoveItem(std::wstring name, std::wstring path)
@@ -547,7 +567,13 @@ void MyFileListWidget::sendRemoveItemSignalAndWriteConfig(std::wstring name, std
 	std::cout << "Send RemoveItem Signal\n";
 	emit removeItemSignal(name, path);
 	cvItemTaskFinished.wait(ulMtxItemTask);
-	writeConfig(configName);
+	//writeConfig(configName);
+	std::vector<std::any> data{
+		name,
+		path
+	};
+	databaseManager.setTableNameAndStruct(configName, configTableStruct);
+	databaseManager.removeLines(data);
 }
 
 void MyFileListWidget::processRenameItem(std::wstring oldName, std::wstring path, std::wstring newName)
@@ -580,7 +606,18 @@ void MyFileListWidget::sendRenameItemSignalAndWriteConfig(std::wstring oldName, 
 	std::cout << "Send RenameItem Signal\n";
 	emit renameItemSignal(oldName, path, newName);
 	cvItemTaskFinished.wait(ulMtxItemTask);
-	writeConfig(configName);
+	//writeConfig(configName);
+	if (itemsMap.count(path + newName))
+	{
+		std::vector<std::any> data{
+			itemsMap[path + newName].windowId,
+			newName,
+			path,
+			itemsMap[path + newName].position
+		};
+		databaseManager.setTableNameAndStruct(configName, configTableStruct);
+		databaseManager.insertOrReplaceLines(data);
+	}
 }
 
 void MyFileListWidget::openProgram(std::wstring exeFilePath, std::wstring parameter, int nShowCmd, std::wstring workDirectory, HWND msgOrErrWindow)
@@ -3074,6 +3111,8 @@ void MyFileListWidget::addItemTaskIfNotInQueue(ItemTask task)
 #endif
 	}
 }
+
+//item任务工作线程
 void MyFileListWidget::itemTaskExecuteProc()
 {
 	while (!checkFilesChangeThreadExit)
@@ -3082,6 +3121,8 @@ void MyFileListWidget::itemTaskExecuteProc()
 		std::lock_guard<std::mutex> lock(mtxItemTaskQueue);
 		if (!itemTaskQueue.empty() && initialized)
 		{
+			databaseManager.createTable(configName, configTableStruct, false, false);
+			databaseManager.transactionBegin();
 			ItemTask it = itemTaskQueue.front();
 #ifdef _DEBUG
 			std::cout << "Execute item task:" << wstr2str_2ANSI(std::any_cast<std::wstring>(it.args[0])) << std::endl;
@@ -3115,6 +3156,8 @@ void MyFileListWidget::itemTaskExecuteProc()
 			itemTaskQueue.pop();
 			continue;
 		}
+		else
+			databaseManager.transactionCommit();
 	}
 }
 
