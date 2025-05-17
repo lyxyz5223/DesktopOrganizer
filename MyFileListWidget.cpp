@@ -1643,6 +1643,8 @@ void MyFileListWidget::resizeEvent(QResizeEvent* e)
 }
 
 
+
+
 bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
 {
 	MSG* msg = (MSG*)message;
@@ -1688,6 +1690,7 @@ bool MyFileListWidget::nativeEvent(const QByteArray& eventType, void* message, q
 	}
 	break;
 	}
+
 	return QWidget::nativeEvent(eventType, message, result);
 }
 
@@ -1696,10 +1699,14 @@ void MyFileListWidget::closeEvent(QCloseEvent* e)
 
 }
 
+
+
+
 bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 {
+	const std::wstring childrenObjName = L"MyFileListItem";
 	// 处理子控件的事件
-	if (watched->objectName().contains("MyFileListItem") && watched->parent() == this)
+	if (watched->objectName().contains(QString::fromStdWString(childrenObjName)) && watched->parent() == this)
 		//要求子控件必须是MyFileListItem
 	{
 		MyFileListItem* item = dynamic_cast<MyFileListItem*>(watched);
@@ -1781,11 +1788,13 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 					//	(item->getPath() + item->text().toStdWString()),
 					//	mousePoint);
 					FileContextMenu fileContextMenu;
-					fileContextMenu.setFilePath(
-						item->getPath() + item->text().toStdWString()
+					fileContextMenu.setFilesArray(
+						dragArea->getSelectedItemsKeys()
+						//{ item->getPath() + item->text().toStdWString() }
 					);
 					fileContextMenu.setParent(this);
-					fileContextMenu.exec(mousePoint);
+					//fileContextMenu.exec(mousePoint);
+					fileContextMenu.execMultiFiles(mousePoint);
 				}
 				break;
 			}
@@ -1935,7 +1944,66 @@ bool MyFileListWidget::eventFilter(QObject* watched, QEvent* event)
 	}
 	else if (watched == this)
 	{
-
+		QKeyEvent* e = dynamic_cast<QKeyEvent*>(event);
+		if (e)
+		{
+			switch (e->type())
+			{
+			case QKeyEvent::KeyPress:
+			{
+				if (e->key() == Qt::Key_Tab)
+				{
+					// TODO: 处理Tab键
+					QWidget* fw = this->focusWidget();
+					if (fw->objectName().contains(QString::fromStdWString(childrenObjName)))
+					{
+						MyFileListItem* item = static_cast<MyFileListItem*>(fw);
+						std::wstring nwp = item->getPath() + item->text().toStdWString();
+						if (itemsMap.count(nwp))
+						{
+							auto maxPosition = std::max_element(positionNameWithPathMap.begin(),
+								positionNameWithPathMap.end(),
+								[](const auto& a, const auto& b)
+								{
+									return a.first < b.first;
+								}
+							)->first;
+							signed long long position = itemsMap[nwp].position/*current position*/ + 1;
+							while (position >= 0 && position <= maxPosition)
+							{
+								if (positionNameWithPathMap.count(position))
+									break;
+								position++;
+							}
+							if (position >= 0 && position <= maxPosition)
+							{
+								std::wstring& nwp = positionNameWithPathMap[position];
+								static_cast<MyFileListItem*>(itemsMap[nwp].item)->setFocus();
+							}
+							else
+							{
+								signed long long position = 0;
+								while (position >= 0 && position <= maxPosition)
+								{
+									if (positionNameWithPathMap.count(position))
+										break;
+									position++;
+								}
+								if (position >= 0 && position <= maxPosition)
+								{
+									std::wstring& nwp = positionNameWithPathMap[position];
+									static_cast<MyFileListItem*>(itemsMap[nwp].item)->setFocus();
+								}
+							}
+						}
+					}
+				}
+				break;
+			}
+			default:
+				break;
+			}
+		}
 	}
 	return QWidget::eventFilter(watched, event);
 }
@@ -3436,18 +3504,21 @@ void MyFileListWidget::removeItem(std::wstring name, std::wstring path)
 	std::wstring nameWithPath = path + name;
 	if (itemsMap.count(nameWithPath))
 	{
-		ItemProp& ip = itemsMap[nameWithPath];
+		ItemProp ip = itemsMap[nameWithPath];
 		void* item = ip.item;
-		//if (ip.position < indexesState.size()) ///TOREMOVE
-		//	indexesState[ip.position] = L'0'; ///TOREMOVE
 		if (positionNameWithPathMap.count(ip.position))
 			positionNameWithPathMap.erase(ip.position);
 		itemsMap.erase(nameWithPath);
 		if (item)
 		{
-			static_cast<MyFileListItem*>(item)->hide();
-			static_cast<MyFileListItem*>(item)->deleteLater();
-			item = nullptr;
+			MyFileListItem* itemCasted = static_cast<MyFileListItem*>(item);
+			if (itemCasted->isChecked())
+			{
+				childrenWindowsMap[ip.windowId].window->dragArea->removeItem(ip.name, ip.path);
+			}
+			itemCasted->hide();
+			itemCasted->deleteLater();
+			itemCasted = nullptr;
 		}
 	}
 	cvItemTaskFinished.notify_one();//唤醒一个等待中的线程

@@ -25,6 +25,8 @@ void MyFileListItem::initialize(QWidget* parent, QSize defaultSize)
 	installEventFilter(this);
 	//itemTextSize.setHeight(25);
 	setCheckable(true);
+	setFocusPolicy(Qt::ClickFocus);//仅点击时获取焦点
+
 	if (!defaultSize.isEmpty())// isEmpty():Returns true if either of the width and height is less than or equal to 0; otherwise returns false.
 	{
 		// defaultSize的width和height均不为0时设置
